@@ -7,10 +7,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.table import Table
 import re
-from latex2mathml.converter import convert
-import xml.etree.ElementTree as ET
 from io import BytesIO
-import zipfile
 import tempfile
 import os
 from datetime import datetime
@@ -23,294 +20,233 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-def latex_to_omml(latex_expr):
-    """Chuyển đổi biểu thức LaTeX thành Office Math Markup Language (OMML)"""
+def latex_to_omml_simple(latex_expr):
+    """Chuyển đổi LaTeX đơn giản thành OMML"""
     try:
-        # Chuyển LaTeX thành MathML
-        mathml = convert(latex_expr)
+        # Xử lý các trường hợp cơ bản
+        latex_expr = latex_expr.strip()
         
-        # Phân tích cú pháp MathML
-        root = ET.fromstring(mathml)
+        # Xử lý phân số \frac{a}{b}
+        frac_pattern = r'\\frac\{([^}]+)\}\{([^}]+)\}'
+        if re.search(frac_pattern, latex_expr):
+            match = re.search(frac_pattern, latex_expr)
+            num = match.group(1)
+            den = match.group(2)
+            omml = f'''<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+                <m:oMath>
+                    <m:f>
+                        <m:num><m:r><m:t>{num}</m:t></m:r></m:num>
+                        <m:den><m:r><m:t>{den}</m:t></m:r></m:den>
+                    </m:f>
+                </m:oMath>
+            </m:oMathPara>'''
+            return omml
         
-        # Chuyển đổi MathML thành OMML (đơn giản hóa)
-        omml_parts = []
+        # Xử lý mũ x^2
+        sup_pattern = r'([a-zA-Z0-9]+)\^([a-zA-Z0-9]+)'
+        if re.search(sup_pattern, latex_expr):
+            match = re.search(sup_pattern, latex_expr)
+            base = match.group(1)
+            exp = match.group(2)
+            omml = f'''<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+                <m:oMath>
+                    <m:sSup>
+                        <m:e><m:r><m:t>{base}</m:t></m:r></m:e>
+                        <m:sup><m:r><m:t>{exp}</m:t></m:r></m:sup>
+                    </m:sSup>
+                </m:oMath>
+            </m:oMathPara>'''
+            return omml
         
-        def mathml_to_omml_recursive(element):
-            tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
-            
-            if tag == 'math':
-                for child in element:
-                    mathml_to_omml_recursive(child)
-            elif tag == 'mi':  # định danh (identifier)
-                text = element.text or ''
-                omml_parts.append(f'<m:r><m:t>{text}</m:t></m:r>')
-            elif tag == 'mn':  # số (number)
-                text = element.text or ''
-                omml_parts.append(f'<m:r><m:t>{text}</m:t></m:r>')
-            elif tag == 'mo':  # toán tử (operator)
-                text = element.text or ''
-                omml_parts.append(f'<m:r><m:t>{text}</m:t></m:r>')
-            elif tag == 'mfrac':  # phân số
-                omml_parts.append('<m:f>')
-                omml_parts.append('<m:num>')
-                if len(element) > 0:
-                    mathml_to_omml_recursive(element[0])
-                omml_parts.append('</m:num>')
-                omml_parts.append('<m:den>')
-                if len(element) > 1:
-                    mathml_to_omml_recursive(element[1])
-                omml_parts.append('</m:den>')
-                omml_parts.append('</m:f>')
-            elif tag == 'msup':  # mũ trên
-                omml_parts.append('<m:sSup>')
-                omml_parts.append('<m:e>')
-                if len(element) > 0:
-                    mathml_to_omml_recursive(element[0])
-                omml_parts.append('</m:e>')
-                omml_parts.append('<m:sup>')
-                if len(element) > 1:
-                    mathml_to_omml_recursive(element[1])
-                omml_parts.append('</m:sup>')
-                omml_parts.append('</m:sSup>')
-            elif tag == 'msub':  # chỉ số dưới
-                omml_parts.append('<m:sSub>')
-                omml_parts.append('<m:e>')
-                if len(element) > 0:
-                    mathml_to_omml_recursive(element[0])
-                omml_parts.append('</m:e>')
-                omml_parts.append('<m:sub>')
-                if len(element) > 1:
-                    mathml_to_omml_recursive(element[1])
-                omml_parts.append('</m:sub>')
-                omml_parts.append('</m:sSub>')
-            elif tag == 'msubsup':  # vừa có chỉ số dưới vừa có mũ trên
-                omml_parts.append('<m:sSubSup>')
-                omml_parts.append('<m:e>')
-                if len(element) > 0:
-                    mathml_to_omml_recursive(element[0])
-                omml_parts.append('</m:e>')
-                omml_parts.append('<m:sub>')
-                if len(element) > 1:
-                    mathml_to_omml_recursive(element[1])
-                omml_parts.append('</m:sub>')
-                omml_parts.append('<m:sup>')
-                if len(element) > 2:
-                    mathml_to_omml_recursive(element[2])
-                omml_parts.append('</m:sup>')
-                omml_parts.append('</m:sSubSup>')
-            elif tag == 'msqrt':  # căn bậc hai
-                omml_parts.append('<m:rad>')
-                omml_parts.append('<m:radPr><m:degHide m:val="1"/></m:radPr>')
-                omml_parts.append('<m:deg></m:deg>')
-                omml_parts.append('<m:e>')
-                for child in element:
-                    mathml_to_omml_recursive(child)
-                omml_parts.append('</m:e>')
-                omml_parts.append('</m:rad>')
-            elif tag == 'mroot':  # căn bậc n
-                omml_parts.append('<m:rad>')
-                omml_parts.append('<m:deg>')
-                if len(element) > 1:
-                    mathml_to_omml_recursive(element[1])
-                omml_parts.append('</m:deg>')
-                omml_parts.append('<m:e>')
-                if len(element) > 0:
-                    mathml_to_omml_recursive(element[0])
-                omml_parts.append('</m:e>')
-                omml_parts.append('</m:rad>')
-            elif tag == 'mrow':  # nhóm các phần tử
-                for child in element:
-                    mathml_to_omml_recursive(child)
-            else:
-                # Xử lý các phần tử khác một cách đệ quy
-                for child in element:
-                    mathml_to_omml_recursive(child)
+        # Xử lý căn bậc hai \sqrt{x}
+        sqrt_pattern = r'\\sqrt\{([^}]+)\}'
+        if re.search(sqrt_pattern, latex_expr):
+            match = re.search(sqrt_pattern, latex_expr)
+            content = match.group(1)
+            omml = f'''<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+                <m:oMath>
+                    <m:rad>
+                        <m:radPr><m:degHide m:val="1"/></m:radPr>
+                        <m:deg></m:deg>
+                        <m:e><m:r><m:t>{content}</m:t></m:r></m:e>
+                    </m:rad>
+                </m:oMath>
+            </m:oMathPara>'''
+            return omml
         
-        mathml_to_omml_recursive(root)
-        
-        # Bọc trong cấu trúc OMML
-        omml = f'<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">{"".join(omml_parts)}</m:oMath>'
-        
-        return omml.strip()
+        # Trường hợp đơn giản: chỉ là text bình thường
+        omml = f'''<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+            <m:oMath>
+                <m:r><m:t>{latex_expr}</m:t></m:r>
+            </m:oMath>
+        </m:oMathPara>'''
+        return omml
         
     except Exception as e:
         return None
 
-def insert_equation_in_paragraph(paragraph, omml_xml):
-    """Chèn phương trình OMML vào đoạn văn"""
+def insert_equation_in_paragraph_fixed(paragraph, omml_xml):
+    """Chèn phương trình OMML vào đoạn văn - version mới"""
     try:
-        # Tạo một run mới cho phương trình
-        run = paragraph.add_run()
-        
-        # Phân tích và chèn XML OMML
+        # Parse OMML XML
         omml_element = parse_xml(omml_xml)
-        run._element.append(omml_element)
+        
+        # Chèn vào paragraph element thay vì run element
+        paragraph._element.append(omml_element)
         
         return True
     except Exception as e:
         return False
 
-def format_table_safe(table, options):
-    """Format bảng theo yêu cầu - phiên bản an toàn"""
+def format_table_fixed(table, options):
+    """Format bảng - version được cải thiện"""
     try:
+        if not table or len(table.rows) == 0:
+            return False
+            
         # Căn giữa bảng
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
         # Format header row (hàng đầu tiên)
-        if len(table.rows) > 0:
-            header_row = table.rows[0]
-            for cell in header_row.cells:
-                try:
-                    # Lấy text từ cell
-                    cell_text = cell.text
-                    # Xóa nội dung cũ
-                    cell.text = ""
-                    # Thêm lại với format mới
-                    paragraph = cell.paragraphs[0]
-                    run = paragraph.add_run(cell_text)
-                    run.bold = True
-                    run.font.size = Pt(12)
-                    run.font.name = 'Times New Roman'
-                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    
-                    # Tô màu nền header
-                    if options.get('color_header', True):
-                        try:
-                            shading_elm = parse_xml('<w:shd xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:fill="4472C4"/>')
-                            cell._tc.get_or_add_tcPr().append(shading_elm)
-                        except:
-                            pass
-                except:
-                    continue
-        
-        # Format data rows
-        for i, row in enumerate(table.rows[1:], 1):
-            for cell in row.cells:
-                try:
-                    # Lấy text từ cell
-                    cell_text = cell.text
-                    # Xóa nội dung cũ
-                    cell.text = ""
-                    # Thêm lại với format mới
-                    paragraph = cell.paragraphs[0]
-                    run = paragraph.add_run(cell_text)
-                    run.font.size = Pt(11)
-                    run.font.name = 'Times New Roman'
-                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                except:
-                    continue
-        
-        return True
-    except Exception as e:
-        return False
-
-def format_questions_safe(paragraph, options):
-    """Format câu hỏi trắc nghiệm - phiên bản hoàn toàn an toàn"""
-    try:
-        text = paragraph.text.strip()
-        
-        if not text:
-            return False
-        
-        # Kiểm tra câu hỏi với **Câu số:**
-        if '**Câu ' in text and ':**' in text:
-            try:
-                start_pos = text.find('**Câu ')
-                end_pos = text.find(':**', start_pos) + 3
-                
-                if start_pos >= 0 and end_pos > start_pos:
-                    question_part = text[start_pos:end_pos]
-                    content_part = text[end_pos:].strip()
-                    
-                    paragraph.clear()
-                    
-                    # Thêm phần câu hỏi (in đậm)
-                    run_question = paragraph.add_run(question_part)
-                    run_question.bold = True
-                    run_question.font.size = Pt(12)
-                    run_question.font.name = 'Times New Roman'
-                    
-                    # Thêm phần nội dung
-                    if content_part:
-                        run_content = paragraph.add_run(" " + content_part)
-                        run_content.font.size = Pt(12)
-                        run_content.font.name = 'Times New Roman'
-                    
-                    return True
-            except:
-                pass
-        
-        # Kiểm tra câu hỏi với Câu số:
-        if text.startswith('Câu ') and ':' in text[:20]:
-            try:
-                colon_pos = text.find(':')
-                if colon_pos > 0 and colon_pos < 20:
-                    question_part = text[:colon_pos + 1]
-                    content_part = text[colon_pos + 1:].strip()
-                    
-                    paragraph.clear()
-                    
-                    # Thêm phần câu hỏi (in đậm)
-                    run_question = paragraph.add_run(question_part)
-                    run_question.bold = True
-                    run_question.font.size = Pt(12)
-                    run_question.font.name = 'Times New Roman'
-                    
-                    # Thêm phần nội dung
-                    if content_part:
-                        run_content = paragraph.add_run(" " + content_part)
-                        run_content.font.size = Pt(12)
-                        run_content.font.name = 'Times New Roman'
-                    
-                    return True
-            except:
-                pass
-        
-        # Kiểm tra đáp án (A., B., C., D.)
-        if len(text) >= 2:
-            first_char = text[0]
-            second_char = text[1] if len(text) > 1 else ''
+        header_row = table.rows[0]
+        for j, cell in enumerate(header_row.cells):
+            # Xóa nội dung cũ và thêm mới
+            for paragraph in cell.paragraphs:
+                paragraph.clear()
             
-            if first_char in 'ABCDabcd' and second_char == '.':
+            # Thêm nội dung với format mới
+            p = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
+            run = p.add_run(cell.text if hasattr(cell, '_original_text') else '')
+            run.bold = True
+            run.font.size = Pt(12)
+            run.font.name = 'Times New Roman'
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Tô màu nền header
+            if options.get('color_header', True):
                 try:
-                    answer_letter = text[:2]  # A., B., etc.
-                    answer_content = text[2:].strip()
-                    
-                    paragraph.clear()
-                    
-                    # Thêm ký hiệu đáp án (in đậm, màu xanh nước biển)
-                    run_letter = paragraph.add_run(answer_letter)
-                    run_letter.bold = True
-                    run_letter.font.color.rgb = RGBColor(0, 123, 191)  # Xanh nước biển
-                    run_letter.font.size = Pt(12)
-                    run_letter.font.name = 'Times New Roman'
-                    
-                    # Thêm nội dung đáp án (nếu có)
-                    if answer_content:
-                        run_content = paragraph.add_run(" " + answer_content)
-                        run_content.font.size = Pt(12)
-                        run_content.font.name = 'Times New Roman'
-                    
-                    return True
+                    # Thêm màu nền xanh
+                    shading_elm = parse_xml(
+                        r'<w:shd xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:fill="4472C4"/>'
+                    )
+                    cell._tc.get_or_add_tcPr().append(shading_elm)
                 except:
                     pass
         
-        return False
+        # Format data rows
+        for i in range(1, len(table.rows)):
+            row = table.rows[i]
+            for j, cell in enumerate(row.cells):
+                # Xóa nội dung cũ và thêm mới
+                for paragraph in cell.paragraphs:
+                    paragraph.clear()
+                
+                # Thêm nội dung với format mới
+                p = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
+                run = p.add_run(cell.text if hasattr(cell, '_original_text') else '')
+                run.font.size = Pt(11)
+                run.font.name = 'Times New Roman'
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
+        return True
     except Exception as e:
+        st.error(f"Lỗi format bảng: {str(e)}")
         return False
 
-def copy_table_safe(original_table, new_doc, options):
-    """Sao chép bảng từ tài liệu gốc sang tài liệu mới - phiên bản an toàn"""
+def format_questions_improved(paragraph, options):
+    """Format câu hỏi trắc nghiệm - version cải thiện"""
     try:
-        # Lấy kích thước bảng
+        text = paragraph.text.strip()
+        if not text:
+            return False
+        
+        # Xóa nội dung cũ
+        paragraph.clear()
+        
+        # Kiểm tra câu hỏi với **Câu số:**
+        if '**Câu ' in text and ':**' in text:
+            start_pos = text.find('**Câu ')
+            end_pos = text.find(':**', start_pos) + 3
+            
+            if start_pos >= 0 and end_pos > start_pos:
+                question_part = text[start_pos:end_pos]
+                content_part = text[end_pos:].strip()
+                
+                # Thêm phần câu hỏi (in đậm)
+                run_question = paragraph.add_run(question_part)
+                run_question.bold = True
+                run_question.font.size = Pt(12)
+                run_question.font.name = 'Times New Roman'
+                
+                # Thêm phần nội dung
+                if content_part:
+                    run_content = paragraph.add_run(" " + content_part)
+                    run_content.font.size = Pt(12)
+                    run_content.font.name = 'Times New Roman'
+                
+                return True
+        
+        # Kiểm tra câu hỏi với Câu số:
+        elif text.startswith('Câu ') and ':' in text[:20]:
+            colon_pos = text.find(':')
+            if colon_pos > 0 and colon_pos < 20:
+                question_part = text[:colon_pos + 1]
+                content_part = text[colon_pos + 1:].strip()
+                
+                # Thêm phần câu hỏi (in đậm)
+                run_question = paragraph.add_run(question_part)
+                run_question.bold = True
+                run_question.font.size = Pt(12)
+                run_question.font.name = 'Times New Roman'
+                
+                # Thêm phần nội dung
+                if content_part:
+                    run_content = paragraph.add_run(" " + content_part)
+                    run_content.font.size = Pt(12)
+                    run_content.font.name = 'Times New Roman'
+                
+                return True
+        
+        # Kiểm tra đáp án (A., B., C., D.)
+        elif len(text) >= 2 and text[0] in 'ABCDabcd' and text[1] == '.':
+            answer_letter = text[:2]  # A., B., etc.
+            answer_content = text[2:].strip()
+            
+            # Thêm ký hiệu đáp án (in đậm, màu xanh nước biển)
+            run_letter = paragraph.add_run(answer_letter)
+            run_letter.bold = True
+            run_letter.font.color.rgb = RGBColor(0, 123, 191)  # Xanh nước biển
+            run_letter.font.size = Pt(12)
+            run_letter.font.name = 'Times New Roman'
+            
+            # Thêm nội dung đáp án (nếu có)
+            if answer_content:
+                run_content = paragraph.add_run(" " + answer_content)
+                run_content.font.size = Pt(12)
+                run_content.font.name = 'Times New Roman'
+            
+            return True
+        
+        else:
+            # Không match pattern nào, khôi phục text gốc
+            paragraph.add_run(text)
+            return False
+        
+    except Exception as e:
+        # Nếu có lỗi, khôi phục text gốc
+        paragraph.clear()
+        paragraph.add_run(text)
+        return False
+
+def copy_table_improved(original_table, new_doc, options):
+    """Sao chép bảng - version cải thiện"""
+    try:
         rows_count = len(original_table.rows)
-        cols_count = 0
-        
-        if rows_count > 0:
-            cols_count = len(original_table.rows[0].cells)
-        
-        if rows_count == 0 or cols_count == 0:
+        if rows_count == 0:
+            return None
+            
+        cols_count = len(original_table.rows[0].cells)
+        if cols_count == 0:
             return None
             
         # Tạo bảng mới
@@ -318,197 +254,154 @@ def copy_table_safe(original_table, new_doc, options):
         
         # Sao chép nội dung từng cell
         for i in range(rows_count):
-            try:
-                original_row = original_table.rows[i]
-                for j in range(min(cols_count, len(original_row.cells))):
-                    try:
-                        # Lấy text từ cell gốc
-                        cell_text = original_row.cells[j].text.strip()
-                        # Gán text cho cell mới
-                        new_table.cell(i, j).text = cell_text
-                    except:
-                        continue
-            except:
-                continue
+            original_row = original_table.rows[i]
+            new_row = new_table.rows[i]
+            
+            for j in range(min(cols_count, len(original_row.cells))):
+                # Lấy text từ cell gốc
+                cell_text = original_row.cells[j].text
+                
+                # Gán text cho cell mới
+                new_row.cells[j].text = cell_text
+                # Lưu text gốc để format sau
+                new_row.cells[j]._original_text = cell_text
         
         # Format bảng nếu được yêu cầu
-        if options.get('format_tables', False):
-            format_table_safe(new_table, options)
+        if options.get('format_tables', True):
+            format_table_fixed(new_table, options)
         
         return new_table
         
     except Exception as e:
+        st.error(f"Lỗi copy bảng: {str(e)}")
         return None
 
-def clean_text_safe(text):
-    """Làm sạch văn bản - phiên bản an toàn"""
+def find_latex_expressions_improved(text):
+    """Tìm biểu thức LaTeX - version cải thiện"""
+    expressions = []
+    
     try:
-        if not text:
-            return text
-            
-        # Loại bỏ ký tự điều khiển bằng cách thay thế từng ký tự
-        cleaned = ""
-        for char in text:
-            # Chỉ giữ lại ký tự có thể in được
-            if ord(char) >= 32 or char in ['\n', '\t']:
-                cleaned += char
-            else:
-                cleaned += ' '
-        
-        # Chuẩn hóa khoảng trắng
-        words = cleaned.split()
-        return ' '.join(words)
-        
-    except Exception as e:
-        return text
-
-def find_latex_expressions(text):
-    """Tìm biểu thức LaTeX một cách an toàn - hỗ trợ nhiều định dạng"""
-    try:
-        expressions = []
-        
         # Tìm ${...}$ trước
-        start = 0
-        while True:
-            start_pos = text.find('${', start)
-            if start_pos == -1:
-                break
-            end_pos = text.find('}$', start_pos + 2)
-            if end_pos == -1:
-                break
-            
-            latex_expr = text[start_pos + 2:end_pos]
-            expressions.append((start_pos, end_pos + 2, latex_expr, 'inline'))
-            start = end_pos + 2
+        pattern = r'\$\{([^}]+)\}\$'
+        for match in re.finditer(pattern, text):
+            expressions.append((match.start(), match.end(), match.group(1), 'inline'))
         
-        # Tìm $...$ sau (tránh trùng lặp với ${...}$)
-        start = 0
-        while True:
-            start_pos = text.find('$', start)
-            if start_pos == -1:
-                break
-                
-            # Kiểm tra xem có phải là ${ không
-            if start_pos < len(text) - 1 and text[start_pos + 1] == '{':
-                start = start_pos + 2
-                continue
-                
-            end_pos = text.find('$', start_pos + 1)
-            if end_pos == -1:
-                break
-                
-            # Kiểm tra xem có phải là }$ không
-            if end_pos > 0 and text[end_pos - 1] == '}':
-                start = end_pos + 1
-                continue
-            
-            latex_expr = text[start_pos + 1:end_pos]
-            # Chỉ thêm nếu không trùng với biểu thức khác
+        # Tìm $...$ (tránh trùng với ${...}$)
+        pattern = r'\$([^{}$]+)\$'
+        for match in re.finditer(pattern, text):
+            # Kiểm tra không trùng với biểu thức đã tìm
             is_overlap = False
             for existing_start, existing_end, _, _ in expressions:
-                if start_pos >= existing_start and end_pos + 1 <= existing_end:
+                if (match.start() >= existing_start and match.end() <= existing_end):
                     is_overlap = True
                     break
             
-            if not is_overlap and latex_expr.strip():
-                expressions.append((start_pos, end_pos + 1, latex_expr, 'display'))
-            
-            start = end_pos + 1
-        
-        # Sắp xếp theo vị trí
-        expressions.sort(key=lambda x: x[0])
-        return expressions
-        
+            if not is_overlap:
+                expressions.append((match.start(), match.end(), match.group(1), 'display'))
+    
     except Exception as e:
-        return []
+        pass
+    
+    # Sắp xếp theo vị trí
+    expressions.sort(key=lambda x: x[0])
+    return expressions
 
-def process_word_document_safe(doc, options):
-    """Xử lý tài liệu Word - phiên bản hoàn toàn an toàn"""
+def clean_text_simple(text):
+    """Làm sạch văn bản - version đơn giản"""
+    if not text:
+        return text
+    
+    # Loại bỏ ký tự điều khiển
+    cleaned = ''.join(char if ord(char) >= 32 or char in '\n\t' else ' ' for char in text)
+    
+    # Chuẩn hóa khoảng trắng
+    return ' '.join(cleaned.split())
+
+def process_word_document_improved(doc, options):
+    """Xử lý tài liệu Word - version cải thiện với debugging"""
     try:
         new_doc = Document()
         
+        # Counters
         processed_count = 0
         error_count = 0
         cleaned_paragraphs = 0
         formatted_questions = 0
         formatted_tables = 0
         
+        # Debug info
+        debug_info = []
+        
         # Xử lý paragraphs
-        for para in doc.paragraphs:
+        for para_idx, para in enumerate(doc.paragraphs):
             try:
+                text = para.text
+                debug_info.append(f"Paragraph {para_idx}: {text[:50]}...")
+                
                 new_para = new_doc.add_paragraph()
                 
                 # Sao chép định dạng đoạn văn
                 try:
                     if para.alignment:
                         new_para.alignment = para.alignment
-                    if para.style:
-                        new_para.style = para.style
                 except:
                     pass
-                
-                text = para.text
                 
                 # Làm sạch văn bản nếu được yêu cầu
                 if options.get('clean_text', False):
                     original_text = text
-                    text = clean_text_safe(text)
+                    text = clean_text_simple(text)
                     if text != original_text:
                         cleaned_paragraphs += 1
                 
                 # Format câu hỏi trắc nghiệm nếu được yêu cầu
                 if options.get('format_questions', False):
-                    new_para.clear()
-                    new_para.add_run(text)
-                    if format_questions_safe(new_para, options):
+                    if format_questions_improved(new_para, options):
                         formatted_questions += 1
+                        debug_info.append(f"  -> Formatted as question")
                         continue
                 
                 # Tìm và xử lý biểu thức LaTeX
                 if options.get('convert_equations', True):
-                    latex_expressions = find_latex_expressions(text)
+                    latex_expressions = find_latex_expressions_improved(text)
+                    debug_info.append(f"  -> Found {len(latex_expressions)} LaTeX expressions")
                     
                     if latex_expressions:
                         last_idx = 0
                         
                         for start, end, latex_expr, math_type in latex_expressions:
-                            try:
-                                # Thêm văn bản trước biểu thức toán học
-                                if start > last_idx:
-                                    text_before = text[last_idx:start]
-                                    if text_before:
-                                        new_para.add_run(text_before)
-                                
-                                # Chuyển đổi LaTeX thành OMML và chèn
-                                omml_xml = latex_to_omml(latex_expr.strip())
-                                
-                                if omml_xml:
-                                    if insert_equation_in_paragraph(new_para, omml_xml):
-                                        processed_count += 1
-                                    else:
-                                        # Dự phòng: chèn dưới dạng văn bản được định dạng
-                                        run = new_para.add_run(f"[PHƯƠNG TRÌNH: {latex_expr}]")
-                                        run.italic = True
-                                        run.bold = True
-                                        error_count += 1
+                            # Thêm văn bản trước biểu thức toán học
+                            if start > last_idx:
+                                text_before = text[last_idx:start]
+                                if text_before:
+                                    new_para.add_run(text_before)
+                            
+                            # Chuyển đổi LaTeX thành OMML và chèn
+                            omml_xml = latex_to_omml_simple(latex_expr.strip())
+                            debug_info.append(f"    -> Converting: {latex_expr}")
+                            
+                            if omml_xml:
+                                if insert_equation_in_paragraph_fixed(new_para, omml_xml):
+                                    processed_count += 1
+                                    debug_info.append(f"    -> SUCCESS: {latex_expr}")
                                 else:
-                                    # Lỗi trong chuyển đổi: chèn dưới dạng văn bản
-                                    if options.get('show_errors', True):
-                                        run = new_para.add_run(f"[LỖI: {latex_expr}]")
-                                        try:
-                                            run.font.color.rgb = RGBColor(255, 0, 0)  # Màu đỏ
-                                        except:
-                                            pass
-                                    else:
-                                        run = new_para.add_run(f"${latex_expr}$")
+                                    # Dự phòng: chèn dưới dạng văn bản được định dạng
+                                    run = new_para.add_run(f"[EQUATION: {latex_expr}]")
+                                    run.italic = True
+                                    run.bold = True
                                     error_count += 1
-                                
-                                last_idx = end
-                            except Exception as e:
-                                # Lỗi khi xử lý LaTeX, giữ nguyên
-                                run = new_para.add_run(f"${latex_expr}$")
+                                    debug_info.append(f"    -> FALLBACK: {latex_expr}")
+                            else:
+                                # Lỗi trong chuyển đổi: chèn dưới dạng văn bản
+                                if options.get('show_errors', True):
+                                    run = new_para.add_run(f"[ERROR: {latex_expr}]")
+                                    run.font.color.rgb = RGBColor(255, 0, 0)  # Màu đỏ
+                                else:
+                                    run = new_para.add_run(f"${latex_expr}$")
                                 error_count += 1
-                                last_idx = end
+                                debug_info.append(f"    -> ERROR: {latex_expr}")
+                            
+                            last_idx = end
                         
                         # Thêm văn bản còn lại sau biểu thức toán học cuối cùng
                         if last_idx < len(text):
@@ -517,19 +410,16 @@ def process_word_document_safe(doc, options):
                                 new_para.add_run(remaining_text)
                     else:
                         # Không có biểu thức LaTeX, sao chép đoạn văn như cũ
-                        new_para.clear()
                         new_para.add_run(text)
                 else:
                     # Không chuyển đổi LaTeX, sao chép như cũ
-                    new_para.clear()  
                     new_para.add_run(text)
                 
                 # Áp dụng định dạng cơ bản
                 if options.get('fix_formatting', False):
                     for run in new_para.runs:
                         try:
-                            if run.font.name != 'Times New Roman':
-                                run.font.name = 'Times New Roman'
+                            run.font.name = 'Times New Roman'
                             if not run.font.size or run.font.size < Pt(11):
                                 run.font.size = Pt(12)
                         except:
@@ -538,15 +428,22 @@ def process_word_document_safe(doc, options):
             except Exception as e:
                 # Nếu có lỗi với paragraph, tạo một paragraph trống
                 new_doc.add_paragraph("")
+                debug_info.append(f"  -> ERROR in paragraph: {str(e)}")
                 continue
         
         # Xử lý bảng
-        for table in doc.tables:
+        debug_info.append(f"Processing {len(doc.tables)} tables...")
+        for table_idx, table in enumerate(doc.tables):
             try:
-                new_table = copy_table_safe(table, new_doc, options)
+                debug_info.append(f"Table {table_idx}: {len(table.rows)} rows, {len(table.rows[0].cells) if table.rows else 0} cols")
+                new_table = copy_table_improved(table, new_doc, options)
                 if new_table:
                     formatted_tables += 1
+                    debug_info.append(f"  -> Table {table_idx} formatted successfully")
+                else:
+                    debug_info.append(f"  -> Table {table_idx} failed to format")
             except Exception as e:
+                debug_info.append(f"  -> ERROR in table {table_idx}: {str(e)}")
                 continue
         
         return new_doc, {
@@ -556,13 +453,14 @@ def process_word_document_safe(doc, options):
             'formatted_questions': formatted_questions,
             'formatted_tables': formatted_tables,
             'total_paragraphs': len(doc.paragraphs),
-            'total_tables': len(doc.tables)
+            'total_tables': len(doc.tables),
+            'debug_info': debug_info
         }
         
     except Exception as e:
         # Nếu có lỗi nghiêm trọng, tạo document mới trống
         new_doc = Document()
-        new_doc.add_paragraph("Lỗi khi xử lý tài liệu")
+        new_doc.add_paragraph("Lỗi khi xử lý tài liệu: " + str(e))
         return new_doc, {
             'processed_count': 0,
             'error_count': 1,
@@ -570,7 +468,8 @@ def process_word_document_safe(doc, options):
             'formatted_questions': 0,
             'formatted_tables': 0,
             'total_paragraphs': 0,
-            'total_tables': 0
+            'total_tables': 0,
+            'debug_info': [f"CRITICAL ERROR: {str(e)}"]
         }
 
 def main():
@@ -608,6 +507,10 @@ def main():
         
         color_header = st.checkbox("Tô màu header bảng", value=True,
                                   help="Tô màu xanh cho hàng đầu tiên của bảng")
+        
+        # Debug option
+        show_debug = st.checkbox("Hiển thị thông tin debug", value=False,
+                                help="Xem chi tiết quá trình xử lý")
         
         st.markdown("---")
         st.markdown("### 📖 Hướng dẫn sử dụng")
@@ -657,8 +560,10 @@ def main():
                     if doc_preview.tables:
                         st.markdown("**📊 Bảng tìm thấy:**")
                         st.info(f"Tài liệu có {len(doc_preview.tables)} bảng")
+                        for i, table in enumerate(doc_preview.tables):
+                            st.text(f"  Bảng {i+1}: {len(table.rows)} dòng × {len(table.rows[0].cells) if table.rows else 0} cột")
                 except Exception as e:
-                    st.warning("Không thể preview file")
+                    st.warning(f"Không thể preview file: {str(e)}")
             
             # Nút xử lý
             if st.button("🚀 Xử lý file", type="primary", use_container_width=True):
@@ -678,7 +583,7 @@ def main():
                         doc = Document(uploaded_file)
                         
                         # Process document
-                        new_doc, stats = process_word_document_safe(doc, options)
+                        new_doc, stats = process_word_document_improved(doc, options)
                         
                         # Save to buffer
                         buffer = BytesIO()
@@ -704,6 +609,12 @@ def main():
                             st.metric("🧹 Đoạn văn đã sạch", stats['cleaned_paragraphs'])
                             success_rate = (stats['processed_count'] / (stats['processed_count'] + stats['error_count']) * 100) if (stats['processed_count'] + stats['error_count']) > 0 else 0
                             st.metric("📈 Tỷ lệ thành công", f"{success_rate:.0f}%")
+                        
+                        # Debug info
+                        if show_debug and stats.get('debug_info'):
+                            with st.expander("🔍 Thông tin Debug"):
+                                for info in stats['debug_info'][:20]:  # Giới hạn 20 dòng đầu
+                                    st.text(info)
                         
                         # Download button
                         st.markdown("### 📥 Tải file đã xử lý")
@@ -739,16 +650,18 @@ def main():
     with col2:
         st.markdown("### 💡 Mẹo hữu ích")
         
-        with st.expander("🔢 LaTeX mới hỗ trợ"):
+        with st.expander("🔢 LaTeX được hỗ trợ"):
             st.markdown("""
-            **Định dạng mới:**
-            - `${a+b}$` → Inline mới (dễ đọc hơn)
-            - `$x^2$` → Inline cũ (vẫn hoạt động)
-            - `$\\frac{a}{b}$` → Display (phân số)
+            **Cơ bản:**
+            - `$x^2$` → x²
+            - `${a+b}$` → a+b
+            - `$x + y = z$` → x + y = z
             
-            **Ưu điểm ${...}$:**
-            - Rõ ràng khi có nhiều ký tự
-            - Tránh nhầm lẫn với $ trong văn bản
+            **Phân số:**
+            - `$\\frac{a}{b}$` → a/b (dạng phân số)
+            
+            **Căn bậc hai:**
+            - `$\\sqrt{x}$` → √x
             """)
         
         with st.expander("🔍 Format câu hỏi trắc nghiệm"):
@@ -777,34 +690,16 @@ def main():
             - Kích thước: Tự động điều chỉnh
             """)
         
-        with st.expander("⚡ LaTeX được hỗ trợ"):
-            st.code("""
-# Cơ bản
-$x + y = z$
-${a^2 + b^2 = c^2}$
-
-# Phân số  
-$\\frac{a}{b}$
-
-# Căn thức
-$\\sqrt{x}$, $\\sqrt[n]{x}$
-
-# Tích phân
-$\\int_0^1 f(x) dx$
-
-# Hình học
-$ABCD$, $\\angle ABC$
-            """)
-        
-        with st.expander("🎯 Ví dụ thực tế"):
+        with st.expander("🎯 Test LaTeX"):
             st.markdown("""
-            **File từ PDF → Word thường có:**
-            - Công thức LaTeX: `$x^2 + y^2$`, `${a+b}$`
-            - Câu hỏi không format: `Câu 1: Nội dung`
-            - Bảng không căn chỉnh
-            - Font chữ không đồng nhất
+            **Thử nghiệm với text này:**
+            ```
+            Phương trình bậc hai: $ax^2 + bx + c = 0$
             
-            **→ App sẽ tự động sửa tất cả!**
+            Công thức nghiệm: $x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$
+            
+            Tích phân: ${\\int_0^1 x dx = \\frac{1}{2}}$
+            ```
             """)
     
     # Footer
@@ -812,7 +707,7 @@ $ABCD$, $\\angle ABC$
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 20px;">
         <p>🚀 Được phát triển với Streamlit | 📊 Hỗ trợ LaTeX, Trắc nghiệm & Bảng</p>
-        <p><small>Phiên bản 4.0 - Mới: Hỗ trợ ${...}$ format + Sửa lỗi syntax hoàn toàn</small></p>
+        <p><small>Phiên bản 5.0 - Fixed & Improved: LaTeX conversion + Table formatting + Debug mode</small></p>
     </div>
     """, unsafe_allow_html=True)
 
