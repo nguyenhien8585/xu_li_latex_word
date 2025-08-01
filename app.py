@@ -1,9 +1,11 @@
 import streamlit as st
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, RGBColor
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.table import Table
 import re
 from latex2mathml.converter import convert
 import xml.etree.ElementTree as ET
@@ -15,7 +17,7 @@ from datetime import datetime
 
 # Cấu hình trang
 st.set_page_config(
-    page_title="Xử lý LaTeX trong Word",
+    page_title="Xử lý LaTeX & Format trong Word",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -151,9 +153,108 @@ def insert_equation_in_paragraph(paragraph, omml_xml):
     except Exception as e:
         return False
 
-def fix_formatting(doc):
+def format_table(table, options):
+    """Format bảng theo yêu cầu"""
+    try:
+        # Căn giữa bảng
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        
+        # Format header row (hàng đầu tiên)
+        if len(table.rows) > 0:
+            header_row = table.rows[0]
+            for cell in header_row.cells:
+                # In đậm text trong header
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.bold = True
+                        run.font.size = Pt(12)
+                        run.font.name = 'Times New Roman'
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Tô màu nền header
+                if options.get('color_header', True):
+                    shading_elm = parse_xml(r'<w:shd {} w:fill="4472C4"/>'.format(nsdecls('w')))
+                    cell._tc.get_or_add_tcPr().append(shading_elm)
+        
+        # Format data rows
+        for i, row in enumerate(table.rows[1:], 1):
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.name = 'Times New Roman'
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        return True
+    except Exception as e:
+        st.error(f"Lỗi format bảng: {str(e)}")
+        return False
+
+def format_questions(paragraph, options):
+    """Format câu hỏi trắc nghiệm"""
+    text = paragraph.text
+    
+    # Pattern cho câu hỏi (Câu 1:, Câu 2:, etc.)
+    question_pattern = r'(\*\*Câu\s+\d+:\*\*|Câu\s+\d+:)'
+    
+    # Pattern cho các đáp án (A., B., C., D. hoặc a., b., c., d.)
+    answer_pattern = r'^([A-Da-d]\.)\s+'
+    
+    # Kiểm tra nếu là câu hỏi
+    if re.search(question_pattern, text, re.IGNORECASE):
+        paragraph.clear()
+        
+        # Tách phần câu hỏi và nội dung
+        match = re.search(question_pattern, text, re.IGNORECASE)
+        if match:
+            question_part = match.group(1)
+            content_part = text[match.end():].strip()
+            
+            # Thêm phần câu hỏi (in đậm)
+            run_question = paragraph.add_run(question_part)
+            run_question.bold = True
+            run_question.font.size = Pt(12)
+            run_question.font.name = 'Times New Roman'
+            
+            # Thêm phần nội dung
+            run_content = paragraph.add_run(" " + content_part)
+            run_content.font.size = Pt(12)
+            run_content.font.name = 'Times New Roman'
+        
+        return True
+    
+    # Kiểm tra nếu là đáp án
+    elif re.match(answer_pattern, text.strip()):
+        paragraph.clear()
+        match = re.match(answer_pattern, text.strip())
+        if match:
+            answer_letter = match.group(1)
+            answer_content = text[match.end():].strip()
+            
+            # Thêm ký hiệu đáp án (in đậm, màu xanh nước biển)
+            run_letter = paragraph.add_run(answer_letter)
+            run_letter.bold = True
+            run_letter.font.color.rgb = RGBColor(0, 123, 191)  # Xanh nước biển
+            run_letter.font.size = Pt(12)
+            run_letter.font.name = 'Times New Roman'
+            
+            # Thêm nội dung đáp án
+            run_content = paragraph.add_run(" " + answer_content)
+            run_content.font.size = Pt(12)
+            run_content.font.name = 'Times New Roman'
+        
+        return True
+    
+    return False
+
+def fix_formatting(doc, options):
     """Sửa định dạng cơ bản của tài liệu"""
     for paragraph in doc.paragraphs:
+        # Format câu hỏi trắc nghiệm nếu được yêu cầu
+        if options.get('format_questions', False):
+            if format_questions(paragraph, options):
+                continue
+        
         # Sửa khoảng cách dòng
         if paragraph.paragraph_format.line_spacing != 1.15:
             paragraph.paragraph_format.line_spacing = 1.15
@@ -164,6 +265,11 @@ def fix_formatting(doc):
                 run.font.name = 'Times New Roman'
             if not run.font.size or run.font.size < Pt(11):
                 run.font.size = Pt(12)
+    
+    # Xử lý bảng
+    if options.get('format_tables', False):
+        for table in doc.tables:
+            format_table(table, options)
 
 def clean_text(text):
     """Làm sạch văn bản từ các ký tự không mong muốn"""
@@ -191,7 +297,10 @@ def process_word_document(doc, options):
     processed_count = 0
     error_count = 0
     cleaned_paragraphs = 0
+    formatted_questions = 0
+    formatted_tables = 0
     
+    # Xử lý các đoạn văn
     for para in doc.paragraphs:
         new_para = new_doc.add_paragraph()
         
@@ -252,7 +361,7 @@ def process_word_document(doc, options):
                 # Lỗi trong chuyển đổi: chèn dưới dạng văn bản
                 if options.get('show_errors', True):
                     run = new_para.add_run(f"[LỖI: {latex_expr}]")
-                    run.font.color.rgb = None  # Màu đỏ cần giá trị RGB
+                    run.font.color.rgb = RGBColor(255, 0, 0)  # Màu đỏ
                 else:
                     run = new_para.add_run(f"${latex_expr}$")
                 error_count += 1
@@ -282,23 +391,47 @@ def process_word_document(doc, options):
                 except:
                     pass
     
+    # Sao chép các bảng từ tài liệu gốc
+    for table in doc.tables:
+        # Tạo bảng mới
+        new_table = new_doc.add_table(rows=len(table.rows), cols=len(table.columns))
+        
+        # Sao chép nội dung bảng
+        for i, row in enumerate(table.rows):
+            for j, cell in enumerate(row.cells):
+                new_table.cell(i, j).text = cell.text
+        
+        # Format bảng nếu được yêu cầu
+        if options.get('format_tables', False):
+            if format_table(new_table, options):
+                formatted_tables += 1
+    
     # Sửa định dạng tài liệu nếu được yêu cầu
     if options.get('fix_formatting', False):
-        fix_formatting(new_doc)
+        fix_formatting(new_doc, options)
+        
+        # Đếm số câu hỏi đã được format
+        for para in new_doc.paragraphs:
+            text = para.text
+            if re.search(r'(\*\*Câu\s+\d+:\*\*|Câu\s+\d+:)', text, re.IGNORECASE):
+                formatted_questions += 1
     
     return new_doc, {
         'processed_count': processed_count,
         'error_count': error_count,
         'cleaned_paragraphs': cleaned_paragraphs,
-        'total_paragraphs': len(doc.paragraphs)
+        'formatted_questions': formatted_questions,
+        'formatted_tables': formatted_tables,
+        'total_paragraphs': len(doc.paragraphs),
+        'total_tables': len(doc.tables)
     }
 
 def main():
     # Header
     st.markdown("""
     <div style="text-align: center; padding: 20px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 30px;">
-        <h1 style="color: white; margin: 0;">📚 Xử lý LaTeX trong Word</h1>
-        <p style="color: white; margin: 10px 0 0 0;">Chuyển đổi biểu thức LaTeX thành công thức toán chuẩn trong Word</p>
+        <h1 style="color: white; margin: 0;">📚 Xử lý LaTeX & Format trong Word</h1>
+        <p style="color: white; margin: 10px 0 0 0;">Chuyển đổi LaTeX, Format câu hỏi trắc nghiệm & Xử lý bảng</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -306,17 +439,28 @@ def main():
     with st.sidebar:
         st.markdown("### ⚙️ Tùy chọn xử lý")
         
-        convert_equations = st.checkbox("🔢 Chuyển đổi công thức LaTeX", value=True,
+        st.markdown("**🔢 Xử lý LaTeX:**")
+        convert_equations = st.checkbox("Chuyển đổi công thức LaTeX", value=True,
                                        help="Chuyển $...$ thành công thức toán chuẩn")
         
-        fix_formatting = st.checkbox("🎨 Sửa định dạng cơ bản", value=True,
+        show_errors = st.checkbox("Hiển thị lỗi chuyển đổi", value=True,
+                                 help="Đánh dấu các biểu thức không chuyển đổi được")
+        
+        st.markdown("**🎨 Format tài liệu:**")
+        fix_formatting = st.checkbox("Sửa định dạng cơ bản", value=True,
                                     help="Chuẩn hóa font chữ, kích thước và khoảng cách")
         
-        clean_text = st.checkbox("🧹 Làm sạch văn bản", value=True,
+        format_questions = st.checkbox("Format câu hỏi trắc nghiệm", value=True,
+                                      help="In đậm câu hỏi, tô màu xanh các đáp án A, B, C, D")
+        
+        format_tables = st.checkbox("Format bảng", value=True,
+                                   help="Căn chỉnh bảng, in đậm header, tô màu")
+        
+        clean_text = st.checkbox("Làm sạch văn bản", value=True,
                                 help="Loại bỏ ký tự lạ và chuẩn hóa khoảng trắng")
         
-        show_errors = st.checkbox("⚠️ Hiển thị lỗi chuyển đổi", value=True,
-                                 help="Đánh dấu các biểu thức không chuyển đổi được")
+        color_header = st.checkbox("Tô màu header bảng", value=True,
+                                  help="Tô màu xanh cho hàng đầu tiên của bảng")
         
         st.markdown("---")
         st.markdown("### 📖 Hướng dẫn sử dụng")
@@ -326,12 +470,11 @@ def main():
         3. **Xử lý**: Nhấn nút "Xử lý file"
         4. **Tải về**: Download file đã xử lý
         
-        **Định dạng LaTeX hỗ trợ:**
-        - `$x^2$` → x²  
-        - `$\\frac{a}{b}$` → phân số
-        - `$\\sqrt{x}$` → căn bậc hai
-        - `$a_n$` → chỉ số dưới
-        - `$\\alpha$` → ký tự Hy Lạp
+        **Định dạng được hỗ trợ:**
+        - LaTeX: `$x^2$`, `$\\frac{a}{b}$`
+        - Câu hỏi: `**Câu 1:**` → **in đậm**
+        - Đáp án: `A.`, `B.` → **màu xanh**
+        - Bảng: Header in đậm, căn giữa
         """)
     
     # Main content
@@ -342,7 +485,7 @@ def main():
         uploaded_file = st.file_uploader(
             "Chọn file Word (.docx) cần xử lý",
             type=["docx"],
-            help="File Word đã được chuyển từ PDF hoặc tạo bằng AI"
+            help="File Word chứa LaTeX, câu hỏi trắc nghiệm hoặc bảng"
         )
         
         if uploaded_file is not None:
@@ -355,13 +498,30 @@ def main():
             
             st.success(f"✅ Đã tải lên: **{file_info['name']}** ({file_info['size']})")
             
+            # Preview nội dung
+            with st.expander("👁️ Xem trước nội dung (5 đoạn đầu)"):
+                try:
+                    doc_preview = Document(uploaded_file)
+                    for i, para in enumerate(doc_preview.paragraphs[:5]):
+                        if para.text.strip():
+                            st.text(f"{i+1}. {para.text[:100]}{'...' if len(para.text) > 100 else ''}")
+                    
+                    if doc_preview.tables:
+                        st.markdown("**📊 Bảng tìm thấy:**")
+                        st.info(f"Tài liệu có {len(doc_preview.tables)} bảng")
+                except:
+                    st.warning("Không thể preview file")
+            
             # Nút xử lý
             if st.button("🚀 Xử lý file", type="primary", use_container_width=True):
                 options = {
                     'convert_equations': convert_equations,
                     'fix_formatting': fix_formatting,
                     'clean_text': clean_text,
-                    'show_errors': show_errors
+                    'show_errors': show_errors,
+                    'format_questions': format_questions,
+                    'format_tables': format_tables,
+                    'color_header': color_header
                 }
                 
                 try:
@@ -385,14 +545,15 @@ def main():
                         # Show results
                         st.markdown("### 📊 Kết quả xử lý")
                         
-                        metric_cols = st.columns(4)
+                        metric_cols = st.columns(3)
                         with metric_cols[0]:
-                            st.metric("✅ Công thức đã chuyển", stats['processed_count'])
-                        with metric_cols[1]:
+                            st.metric("✅ Công thức LaTeX", stats['processed_count'])
                             st.metric("❌ Lỗi chuyển đổi", stats['error_count'])
+                        with metric_cols[1]:
+                            st.metric("📋 Câu hỏi đã format", stats['formatted_questions'])
+                            st.metric("📊 Bảng đã format", stats['formatted_tables'])
                         with metric_cols[2]:
                             st.metric("🧹 Đoạn văn đã sạch", stats['cleaned_paragraphs'])
-                        with metric_cols[3]:
                             success_rate = (stats['processed_count'] / (stats['processed_count'] + stats['error_count']) * 100) if (stats['processed_count'] + stats['error_count']) > 0 else 0
                             st.metric("📈 Tỷ lệ thành công", f"{success_rate:.0f}%")
                         
@@ -407,12 +568,21 @@ def main():
                         )
                         
                         # Success message
+                        success_messages = []
                         if stats['processed_count'] > 0:
-                            st.success(f"🎉 Đã xử lý thành công {stats['processed_count']} công thức LaTeX!")
-                        if stats['error_count'] > 0:
-                            st.warning(f"⚠️ Có {stats['error_count']} biểu thức gặp lỗi hoặc không được hỗ trợ.")
+                            success_messages.append(f"✅ {stats['processed_count']} công thức LaTeX")
+                        if stats['formatted_questions'] > 0:
+                            success_messages.append(f"📋 {stats['formatted_questions']} câu hỏi")
+                        if stats['formatted_tables'] > 0:
+                            success_messages.append(f"📊 {stats['formatted_tables']} bảng")
                         if stats['cleaned_paragraphs'] > 0:
-                            st.info(f"🧹 Đã làm sạch {stats['cleaned_paragraphs']} đoạn văn.")
+                            success_messages.append(f"🧹 {stats['cleaned_paragraphs']} đoạn văn")
+                        
+                        if success_messages:
+                            st.success(f"🎉 Đã xử lý thành công: {', '.join(success_messages)}!")
+                        
+                        if stats['error_count'] > 0:
+                            st.warning(f"⚠️ Có {stats['error_count']} biểu thức LaTeX gặp lỗi.")
                 
                 except Exception as e:
                     st.error(f"❌ Lỗi khi xử lý file: {str(e)}")
@@ -421,48 +591,68 @@ def main():
     with col2:
         st.markdown("### 💡 Mẹo hữu ích")
         
-        with st.expander("🔍 Kiểm tra file trước khi xử lý"):
+        with st.expander("🔍 Format câu hỏi trắc nghiệm"):
             st.markdown("""
-            - Đảm bảo file là định dạng `.docx`
-            - Kiểm tra các biểu thức LaTeX có đúng cú pháp
-            - File không bị khóa hoặc mã hóa
-            - Kích thước file không quá lớn (< 10MB)
+            **Input:**
+            ```
+            **Câu 1:** Cho tứ diện ABCD...
+            A. Đáp án A
+            B. Đáp án B  
+            C. Đáp án C
+            D. Đáp án D
+            ```
+            
+            **Output:**
+            - **Câu 1:** → In đậm
+            - **A.** → Màu xanh nước biển, in đậm
+            - **B.** → Màu xanh nước biển, in đậm
             """)
         
-        with st.expander("🎯 Tối ưu kết quả"):
+        with st.expander("📊 Format bảng"):
             st.markdown("""
-            - **Bật "Sửa định dạng"** cho file từ PDF
-            - **Bật "Làm sạch văn bản"** nếu có ký tự lạ  
-            - **Tắt "Hiển thị lỗi"** nếu muốn ẩn lỗi
-            - Kiểm tra kết quả trước khi sử dụng
+            **Tự động xử lý:**
+            - Header (hàng 1): In đậm, tô màu xanh
+            - Dữ liệu: Căn giữa, font Times New Roman
+            - Bảng: Căn giữa trang
+            - Kích thước: Tự động điều chỉnh
             """)
         
-        with st.expander("⚡ Ví dụ LaTeX phổ biến"):
+        with st.expander("⚡ LaTeX được hỗ trợ"):
             st.code("""
 # Cơ bản
 $x + y = z$
 $a^2 + b^2 = c^2$
 
-# Phân số
-$\\frac{numerator}{denominator}$
+# Phân số  
+$\\frac{a}{b}$
 
 # Căn thức
-$\\sqrt{x}$
-$\\sqrt[n]{x}$
+$\\sqrt{x}$, $\\sqrt[n]{x}$
 
 # Tích phân
 $\\int_0^1 f(x) dx$
 
-# Ma trận
-$\\begin{matrix} a & b \\\\ c & d \\end{matrix}$
+# Hình học
+$ABCD$, $\\angle ABC$
+            """)
+        
+        with st.expander("🎯 Ví dụ thực tế"):
+            st.markdown("""
+            **File từ PDF → Word thường có:**
+            - Công thức LaTeX: `$x^2 + y^2$`
+            - Câu hỏi không format: `Câu 1: Nội dung`
+            - Bảng không căn chỉnh
+            - Font chữ không đồng nhất
+            
+            **→ App sẽ tự động sửa tất cả!**
             """)
     
     # Footer
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 20px;">
-        <p>🚀 Được phát triển với Streamlit | 📧 Hỗ trợ: support@example.com</p>
-        <p><small>Phiên bản 1.0 - Hỗ trợ chuyển đổi LaTeX thành công thức Word chuẩn</small></p>
+        <p>🚀 Được phát triển với Streamlit | 📊 Hỗ trợ LaTeX, Trắc nghiệm & Bảng</p>
+        <p><small>Phiên bản 2.0 - Tối ưu cho file PDF → Word từ AI</small></p>
     </div>
     """, unsafe_allow_html=True)
 
