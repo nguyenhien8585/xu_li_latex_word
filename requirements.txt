@@ -1,4 +1,6 @@
 streamlit
 python-docx
-latex2mathml
 lxml
+pandas
+openpyxl
+toml
