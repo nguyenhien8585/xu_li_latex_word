@@ -195,7 +195,7 @@ def convert_latex_symbols(text):
     return result
 
 def find_math_expressions(text):
-    """Tìm TẤT CẢ expressions toán học - improved detection"""
+    """Tìm expressions toán học trong text"""
     expressions = []
     i = 0
     
@@ -229,9 +229,16 @@ def find_math_expressions(text):
             else:
                 # Xử lý $...$ format thông thường
                 content_start = i
+                brace_depth = 0
                 
-                # Tìm $ đóng, cho phép nested braces
-                while i < len(text) and text[i] != '$':
+                # Tìm $ đóng, tracking nested braces
+                while i < len(text):
+                    if text[i] == '{':
+                        brace_depth += 1
+                    elif text[i] == '}':
+                        brace_depth -= 1
+                    elif text[i] == '$' and brace_depth == 0:
+                        break
                     i += 1
                 
                 if i < len(text):  # Tìm thấy $ đóng
@@ -247,10 +254,25 @@ def find_math_expressions(text):
     
     return expressions
 
-def create_prime_equation_omml(paragraph, text):
+def create_omml_equation(paragraph, text, equation_type='simple'):
+    """Tạo OMML equation object thực sự"""
+    try:
+        if equation_type == 'prime':
+            return create_prime_omml(paragraph, text)
+        elif equation_type == 'superscript':
+            return create_superscript_omml(paragraph, text)
+        elif equation_type == 'fraction':
+            return create_fraction_omml(paragraph, text)
+        elif equation_type == 'parentheses':
+            return create_parentheses_omml(paragraph, text)
+        else:
+            return create_simple_omml(paragraph, text)
+    except Exception:
+        return False
+
+def create_prime_omml(paragraph, text):
     """OMML cho prime notation"""
     try:
-        # Split base and prime
         base = text.replace("'", "").strip()
         prime_count = text.count("'")
         
@@ -283,14 +305,106 @@ def create_prime_equation_omml(paragraph, text):
         math_element = parse_xml(omml_xml)
         paragraph._element.append(math_element)
         return True
-        
     except Exception:
         return False
 
-def create_parentheses_equation_omml(paragraph, text):
+def create_superscript_omml(paragraph, text):
+    """OMML cho superscript numbers"""
+    try:
+        base = ""
+        sup = ""
+        
+        for char in text:
+            if char in '⁰¹²³⁴⁵⁶⁷⁸⁹':
+                sup_map = {'⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+                          '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9'}
+                sup += sup_map.get(char, char)
+            else:
+                if not sup:
+                    base += char
+        
+        if not sup:
+            return create_simple_omml(paragraph, text)
+        
+        omml_xml = f'''
+        <m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+            <m:sSup>
+                <m:sSupPr></m:sSupPr>
+                <m:e>
+                    <m:r>
+                        <m:rPr>
+                            <m:scr m:val="roman"/>
+                            <m:sty m:val="i"/>
+                        </m:rPr>
+                        <m:t>{base}</m:t>
+                    </m:r>
+                </m:e>
+                <m:sup>
+                    <m:r>
+                        <m:rPr>
+                            <m:scr m:val="roman"/>
+                            <m:sty m:val="p"/>
+                        </m:rPr>
+                        <m:t>{sup}</m:t>
+                    </m:r>
+                </m:sup>
+            </m:sSup>
+        </m:oMath>
+        '''
+        
+        math_element = parse_xml(omml_xml)
+        paragraph._element.append(math_element)
+        return True
+    except Exception:
+        return False
+
+def create_fraction_omml(paragraph, text):
+    """OMML cho fractions"""
+    try:
+        frac_pattern = r'\(([^)]+)\)/\(([^)]+)\)'
+        match = re.search(frac_pattern, text)
+        
+        if match:
+            numerator = match.group(1)
+            denominator = match.group(2)
+            
+            omml_xml = f'''
+            <m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+                <m:f>
+                    <m:fPr></m:fPr>
+                    <m:num>
+                        <m:r>
+                            <m:rPr>
+                                <m:scr m:val="roman"/>
+                                <m:sty m:val="i"/>
+                            </m:rPr>
+                            <m:t>{numerator}</m:t>
+                        </m:r>
+                    </m:num>
+                    <m:den>
+                        <m:r>
+                            <m:rPr>
+                                <m:scr m:val="roman"/>
+                                <m:sty m:val="i"/>
+                            </m:rPr>
+                            <m:t>{denominator}</m:t>
+                        </m:r>
+                    </m:den>
+                </m:f>
+            </m:oMath>
+            '''
+            
+            math_element = parse_xml(omml_xml)
+            paragraph._element.append(math_element)
+            return True
+        
+        return False
+    except Exception:
+        return False
+
+def create_parentheses_omml(paragraph, text):
     """OMML cho expressions với dấu ngoặc"""
     try:
-        # Extract content inside parentheses
         start = text.find('(')
         end = text.rfind(')')
         
@@ -323,64 +437,10 @@ def create_parentheses_equation_omml(paragraph, text):
         math_element = parse_xml(omml_xml)
         paragraph._element.append(math_element)
         return True
-        
     except Exception:
         return False
 
-def create_superscript_equation_omml(paragraph, text):
-    """OMML cho superscript numbers"""
-    try:
-        # Find base and superscript
-        base = ""
-        sup = ""
-        
-        for char in text:
-            if char in '⁰¹²³⁴⁵⁶⁷⁸⁹':
-                # Convert back to normal number
-                sup_map = {'⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
-                          '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9'}
-                sup += sup_map.get(char, char)
-            else:
-                if not sup:  # Still building base
-                    base += char
-        
-        if not sup:
-            return create_simple_equation_omml(paragraph, text)
-        
-        omml_xml = f'''
-        <m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
-            <m:sSup>
-                <m:sSupPr></m:sSupPr>
-                <m:e>
-                    <m:r>
-                        <m:rPr>
-                            <m:scr m:val="roman"/>
-                            <m:sty m:val="i"/>
-                        </m:rPr>
-                        <m:t>{base}</m:t>
-                    </m:r>
-                </m:e>
-                <m:sup>
-                    <m:r>
-                        <m:rPr>
-                            <m:scr m:val="roman"/>
-                            <m:sty m:val="p"/>
-                        </m:rPr>
-                        <m:t>{sup}</m:t>
-                    </m:r>
-                </m:sup>
-            </m:sSup>
-        </m:oMath>
-        '''
-        
-        math_element = parse_xml(omml_xml)
-        paragraph._element.append(math_element)
-        return True
-        
-    except Exception:
-        return False
-
-def create_simple_equation_omml(paragraph, text):
+def create_simple_omml(paragraph, text):
     """OMML cho equation đơn giản"""
     try:
         omml_xml = f'''
@@ -398,39 +458,26 @@ def create_simple_equation_omml(paragraph, text):
         math_element = parse_xml(omml_xml)
         paragraph._element.append(math_element)
         return True
-        
     except Exception:
         return False
 
-def convert_to_eq_field(unicode_text, latex_text):
-    """Convert to EQ field format"""
-    # EQ field syntax for common patterns
-    eq_content = unicode_text
-    
-    # Handle superscripts for EQ field
-    if "'" in unicode_text:
-        # A' -> A\s\up5(')
-        base = unicode_text.replace("'", "")
-        eq_content = f"{base}\\s\\up5(')"
-    elif '²' in unicode_text:
-        base = unicode_text.replace('²', '')
-        eq_content = f"{base}\\s\\up5(2)"
-    elif '³' in unicode_text:
-        base = unicode_text.replace('³', '')
-        eq_content = f"{base}\\s\\up5(3)"
-    
-    return eq_content
-
 def create_equation_field(paragraph, unicode_text, original_latex):
-    """Thử tạo equation field thực sự trong Word"""
+    """Tạo Word EQ field"""
     try:
-        # Approach: Insert equation through field codes
-        # EQ field is Word's built-in equation field
+        eq_content = unicode_text
         
-        # Convert content to EQ field format
-        eq_content = convert_to_eq_field(unicode_text, original_latex)
+        # Handle superscripts for EQ field
+        if "'" in unicode_text:
+            base = unicode_text.replace("'", "")
+            eq_content = f"{base}\\s\\up5(')"
+        elif '²' in unicode_text:
+            base = unicode_text.replace('²', '')
+            eq_content = f"{base}\\s\\up5(2)"
+        elif '³' in unicode_text:
+            base = unicode_text.replace('³', '')
+            eq_content = f"{base}\\s\\up5(3)"
         
-        # Create field run
+        # Create field elements
         fldChar_begin = parse_xml(
             r'<w:fldChar xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:fldCharType="begin"/>'
         )
@@ -449,102 +496,76 @@ def create_equation_field(paragraph, unicode_text, original_latex):
         paragraph._element.append(fldChar_end)
         
         return True
-        
     except Exception:
         return False
 
-def create_professional_math_run(paragraph, unicode_text, original_latex):
-    """Tạo run với style chuyên nghiệp như equation"""
+def create_styled_math_run(paragraph, unicode_text):
+    """Tạo styled run như equation"""
     try:
-        # Tạo run với style equation đặc biệt
         run = paragraph.add_run(unicode_text)
         
         # Professional equation styling
         run.font.name = 'Cambria Math'
         run.font.size = Pt(13)
         run.italic = True
-        run.bold = False
+        run.font.color.rgb = RGBColor(0, 32, 96)
         
-        # Màu equation chuyên nghiệp
-        run.font.color.rgb = RGBColor(0, 32, 96)  # Dark navy blue
-        
-        # Thêm background nhẹ để highlight
+        # Add background
         try:
             rPr = run._element.get_or_add_rPr()
-            
-            # Add equation-like background
             shading_xml = '''<w:shd xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" 
                             w:val="clear" w:color="auto" w:fill="F8F9FA"/>'''
             shading = parse_xml(shading_xml)
             rPr.append(shading)
-            
-            # Add slight border for equation effect
-            border_xml = '''<w:bdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-                           w:val="single" w:sz="2" w:space="1" w:color="E3E6F0"/>'''
-            try:
-                border = parse_xml(border_xml)
-                rPr.append(border)
-            except:
-                pass
-                
         except:
             pass
         
         return True
-        
     except Exception:
         return False
 
-def create_complex_equation_omml(paragraph, latex_text):
-    """Tạo OMML equation phức tạp cho cases đặc biệt"""
-    try:
-        unicode_content = convert_latex_symbols(latex_text)
-        
-        # Determine equation type và tạo OMML phù hợp
-        if "'" in unicode_content:
-            return create_prime_equation_omml(paragraph, unicode_content)
-        elif '(' in unicode_content and ')' in unicode_content:
-            return create_parentheses_equation_omml(paragraph, unicode_content)
-        elif any(c in unicode_content for c in ['²', '³', '⁴', '⁵']):
-            return create_superscript_equation_omml(paragraph, unicode_content)
-        else:
-            return create_simple_equation_omml(paragraph, unicode_content)
-            
-    except Exception:
-        return False
-
-def create_word_equation(paragraph, latex_text, expr_type='normal'):
-    """Tạo equation object đẹp trong Word - Improved version"""
-    try:
-        # Convert LaTeX to Unicode
-        unicode_content = convert_latex_symbols(latex_text)
-        
-        # Method 1: Thử tạo equation field thực sự
-        if create_equation_field(paragraph, unicode_content, latex_text):
-            return True
-        
-        # Method 2: Tạo styled run trông như equation
-        return create_professional_math_run(paragraph, unicode_content, latex_text)
-        
-    except Exception as e:
+def create_equation_object(paragraph, latex_text):
+    """Tạo equation object với multiple methods"""
+    unicode_content = convert_latex_symbols(latex_text)
+    
+    # Determine equation type
+    equation_type = 'simple'
+    if "'" in unicode_content:
+        equation_type = 'prime'
+    elif '(' in unicode_content and ')' in unicode_content and '/' in unicode_content:
+        equation_type = 'fraction'
+    elif any(c in unicode_content for c in ['²', '³', '⁴', '⁵']):
+        equation_type = 'superscript'
+    elif '(' in unicode_content and ')' in unicode_content:
+        equation_type = 'parentheses'
+    
+    # Try methods in order
+    if create_omml_equation(paragraph, unicode_content, equation_type):
+        return 'omml'
+    elif create_equation_field(paragraph, unicode_content, latex_text):
+        return 'field'
+    elif create_styled_math_run(paragraph, unicode_content):
+        return 'styled'
+    else:
         # Final fallback
-        run = paragraph.add_run(f"[Math: {latex_text}]")
+        run = paragraph.add_run(f"[{latex_text}]")
         run.italic = True
         run.font.color.rgb = RGBColor(255, 0, 0)
-        return False
+        return 'error'
 
 def process_text_with_math(paragraph, text):
-    """Xử lý text có công thức toán học - Enhanced với multiple approaches"""
+    """Xử lý text có công thức toán học"""
     expressions = find_math_expressions(text)
     
     if not expressions:
         run = paragraph.add_run(text)
         run.font.size = Pt(12)
         run.font.name = 'Times New Roman'
-        return 0
+        return 0, {'omml': 0, 'field': 0, 'styled': 0, 'error': 0}
     
     last_pos = 0
     math_count = 0
+    method_stats = {'omml': 0, 'field': 0, 'styled': 0, 'error': 0}
     
     for start, end, latex_content, expr_type in expressions:
         # Thêm text trước equation
@@ -555,28 +576,10 @@ def process_text_with_math(paragraph, text):
                 run.font.size = Pt(12)
                 run.font.name = 'Times New Roman'
         
-        # Thử tạo equation với multiple methods
-        equation_created = False
-        
-        # Method 1: Complex OMML cho cases đặc biệt
-        if create_complex_equation_omml(paragraph, latex_content):
-            equation_created = True
-        # Method 2: Word equation field
-        elif create_word_equation(paragraph, latex_content, expr_type):
-            equation_created = True
-        # Method 3: Professional styled run
-        else:
-            unicode_text = convert_latex_symbols(latex_content)
-            if create_professional_math_run(paragraph, unicode_text, latex_content):
-                equation_created = True
-            else:
-                # Final fallback
-                run = paragraph.add_run(f"[{latex_content}]")
-                run.italic = True
-                run.font.color.rgb = RGBColor(255, 0, 0)
-        
-        if equation_created:
-            math_count += 1
+        # Tạo equation object
+        method_used = create_equation_object(paragraph, latex_content)
+        method_stats[method_used] += 1
+        math_count += 1
         
         last_pos = end
     
@@ -588,59 +591,59 @@ def process_text_with_math(paragraph, text):
             run.font.size = Pt(12)
             run.font.name = 'Times New Roman'
     
-    return math_count
+    return math_count, method_stats
 
 def format_question_answer(paragraph, text):
     """Format câu hỏi và đáp án"""
     paragraph.clear()
     
-    # Kiểm tra pattern câu hỏi
+    # Pattern câu hỏi
     question_pattern = r'^(Câu\s+\d+[\.:])\s*(.*)'
     match = re.match(question_pattern, text, re.IGNORECASE)
     if match:
         question_part = match.group(1)
         content_part = match.group(2)
         
-        # In đậm phần câu hỏi
+        # Bold question number
         run_q = paragraph.add_run(question_part)
         run_q.bold = True
         run_q.font.size = Pt(12)
         run_q.font.name = 'Times New Roman'
         
-        # Xử lý phần nội dung
+        # Process content with math
         if content_part:
             paragraph.add_run(" ")
             process_text_with_math(paragraph, content_part)
         
         return True
     
-    # Kiểm tra pattern đáp án
+    # Pattern đáp án
     answer_pattern = r'^([A-Da-d])[\.\)]\s*(.*)'
     match = re.match(answer_pattern, text)
     if match:
         answer_letter = match.group(1).upper() + '.'
         answer_content = match.group(2)
         
-        # Format chữ cái đáp án
+        # Bold answer letter
         run_l = paragraph.add_run(answer_letter)
         run_l.bold = True
         run_l.font.color.rgb = RGBColor(0, 112, 192)
         run_l.font.size = Pt(12)
         run_l.font.name = 'Times New Roman'
         
-        # Xử lý nội dung đáp án
+        # Process answer content
         if answer_content:
             paragraph.add_run(" ")
             process_text_with_math(paragraph, answer_content)
         
         return True
     
-    # Không phải Q&A, xử lý bình thường
+    # Không phải Q&A
     process_text_with_math(paragraph, text)
     return False
 
 def is_markdown_table(text):
-    """Kiểm tra xem text có phải markdown table không"""
+    """Kiểm tra markdown table"""
     lines = text.strip().split('\n')
     if len(lines) < 2:
         return False
@@ -653,7 +656,7 @@ def is_markdown_table(text):
     return pipe_count >= 2
 
 def parse_table_from_text(text):
-    """Parse text thành table data"""
+    """Parse markdown table"""
     lines = text.strip().split('\n')
     table_rows = []
     
@@ -662,12 +665,11 @@ def parse_table_from_text(text):
         if not line:
             continue
         
-        # Bỏ qua dòng separator
+        # Skip separator line
         if re.match(r'^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$', line):
             continue
         
         if '|' in line:
-            # Loại bỏ | đầu và cuối
             line = line.strip('|')
             cells = [cell.strip() for cell in line.split('|')]
             if cells:
@@ -676,11 +678,12 @@ def parse_table_from_text(text):
     return table_rows
 
 def create_word_table(doc, table_data, options):
-    """Tạo Word table từ data với enhanced equation processing"""
+    """Tạo Word table"""
     if not table_data:
-        return 0
+        return 0, {'omml': 0, 'field': 0, 'styled': 0, 'error': 0}
     
     math_count = 0
+    total_method_stats = {'omml': 0, 'field': 0, 'styled': 0, 'error': 0}
     max_cols = max(len(row) for row in table_data)
     
     # Tạo table
@@ -700,10 +703,12 @@ def create_word_table(doc, table_data, options):
                 else:
                     cell_para = cell.add_paragraph()
                 
-                # Xử lý Q&A hoặc math
+                # Process cell content
                 if not format_question_answer(cell_para, cell_text):
-                    cell_math_count = process_text_with_math(cell_para, cell_text)
+                    cell_math_count, cell_method_stats = process_text_with_math(cell_para, cell_text)
                     math_count += cell_math_count
+                    for method, count in cell_method_stats.items():
+                        total_method_stats[method] += count
                 
                 # Format cell
                 cell_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -713,20 +718,17 @@ def create_word_table(doc, table_data, options):
                     if not run.font.size:
                         run.font.size = Pt(11)
     
-    # Format table structure
+    # Format table
     if options.get('format_tables', True):
         word_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
-        # Format header
         if word_table.rows:
             header_row = word_table.rows[0]
             for cell in header_row.cells:
                 for para in cell.paragraphs:
                     for run in para.runs:
                         run.bold = True
-                        run.font.size = Pt(12)
                 
-                # Màu nền xanh
                 try:
                     shading_xml = '<w:shd xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:fill="D9E2F3"/>'
                     shading = parse_xml(shading_xml)
@@ -734,23 +736,27 @@ def create_word_table(doc, table_data, options):
                 except:
                     pass
     
-    return math_count
+    return math_count, total_method_stats
 
 def process_document_content(doc, options):
-    """Xử lý nội dung document với detailed logging"""
+    """Xử lý document content"""
     new_doc = Document()
     
     stats = {
         'math_expressions': 0,
+        'omml_equations': 0,
+        'field_equations': 0,
+        'styled_equations': 0,
+        'error_equations': 0,
         'questions_formatted': 0,
         'word_tables': 0,
         'markdown_tables': 0,
         'debug_log': []
     }
     
-    stats['debug_log'].append(f"🚀 Bắt đầu xử lý: {len(doc.paragraphs)} paragraphs, {len(doc.tables)} tables")
+    stats['debug_log'].append(f"🚀 Processing: {len(doc.paragraphs)} paragraphs, {len(doc.tables)} tables")
     
-    # Xử lý paragraphs
+    # Process paragraphs
     i = 0
     while i < len(doc.paragraphs):
         para = doc.paragraphs[i]
@@ -761,16 +767,8 @@ def process_document_content(doc, options):
             i += 1
             continue
         
-        # Debug: Check for math content
-        math_expressions = find_math_expressions(text)
-        if math_expressions:
-            stats['debug_log'].append(f"📐 P{i}: Found {len(math_expressions)} math expressions")
-            for j, (start, end, content, expr_type) in enumerate(math_expressions):
-                stats['debug_log'].append(f"   Math {j+1}: '{content}' ({expr_type})")
-        
-        # Kiểm tra markdown table
+        # Check for markdown table
         if '|' in text and options.get('convert_markdown', True):
-            # Collect multiple lines for table
             table_lines = []
             j = i
             
@@ -784,47 +782,54 @@ def process_document_content(doc, options):
                 else:
                     break
             
-            # Check if it's a valid table
             combined_text = '\n'.join(table_lines)
             if is_markdown_table(combined_text):
                 table_data = parse_table_from_text(combined_text)
                 if table_data:
-                    math_count = create_word_table(new_doc, table_data, options)
+                    math_count, method_stats = create_word_table(new_doc, table_data, options)
                     stats['math_expressions'] += math_count
+                    stats['omml_equations'] += method_stats['omml']
+                    stats['field_equations'] += method_stats['field']
+                    stats['styled_equations'] += method_stats['styled']
+                    stats['error_equations'] += method_stats['error']
                     stats['markdown_tables'] += 1
-                    stats['debug_log'].append(f"📋 Converted markdown table: {len(table_data)} rows, {math_count} equations")
+                    stats['debug_log'].append(f"📋 Converted table: {len(table_data)} rows, {math_count} equations")
                 
                 i = j
                 continue
         
-        # Xử lý paragraph thông thường
+        # Process normal paragraph
         new_para = new_doc.add_paragraph()
         
         if format_question_answer(new_para, text):
             stats['questions_formatted'] += 1
-            stats['debug_log'].append(f"📝 P{i}: Formatted as Q&A")
+            stats['debug_log'].append(f"📝 P{i}: Q&A formatted")
         else:
-            math_count = process_text_with_math(new_para, text)
+            math_count, method_stats = process_text_with_math(new_para, text)
             stats['math_expressions'] += math_count
+            stats['omml_equations'] += method_stats['omml']
+            stats['field_equations'] += method_stats['field']
+            stats['styled_equations'] += method_stats['styled']
+            stats['error_equations'] += method_stats['error']
+            
             if math_count > 0:
-                stats['debug_log'].append(f"🔢 P{i}: Created {math_count} equations")
+                stats['debug_log'].append(f"🔢 P{i}: {math_count} equations ({method_stats['omml']} OMML, {method_stats['field']} field, {method_stats['styled']} styled)")
         
         i += 1
     
-    # Xử lý Word tables
+    # Process existing Word tables
     for table_idx, table in enumerate(doc.tables):
         if not table.rows:
             continue
         
-        stats['debug_log'].append(f"📊 Processing Word table {table_idx}")
-        
         num_rows = len(table.rows)
         num_cols = len(table.rows[0].cells) if table.rows else 0
         
-        # Tạo table mới
         new_table = new_doc.add_table(rows=num_rows, cols=num_cols)
         
         table_math = 0
+        table_method_stats = {'omml': 0, 'field': 0, 'styled': 0, 'error': 0}
+        
         for r in range(num_rows):
             for c in range(min(len(table.rows[r].cells), num_cols)):
                 original_cell = table.rows[r].cells[c]
@@ -832,11 +837,6 @@ def process_document_content(doc, options):
                 
                 cell_text = original_cell.text.strip()
                 if cell_text:
-                    # Check for math in cell
-                    cell_math = find_math_expressions(cell_text)
-                    if cell_math:
-                        stats['debug_log'].append(f"   Cell[{r}][{c}]: {len(cell_math)} math expressions")
-                    
                     new_cell.text = ""
                     if new_cell.paragraphs:
                         cell_para = new_cell.paragraphs[0]
@@ -845,13 +845,18 @@ def process_document_content(doc, options):
                         cell_para = new_cell.add_paragraph()
                     
                     if not format_question_answer(cell_para, cell_text):
-                        cell_math_count = process_text_with_math(cell_para, cell_text)
+                        cell_math_count, cell_method_stats = process_text_with_math(cell_para, cell_text)
                         table_math += cell_math_count
+                        for method, count in cell_method_stats.items():
+                            table_method_stats[method] += count
                     
                     cell_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         stats['math_expressions'] += table_math
-        stats['debug_log'].append(f"📊 Table {table_idx}: {table_math} equations created")
+        stats['omml_equations'] += table_method_stats['omml']
+        stats['field_equations'] += table_method_stats['field']
+        stats['styled_equations'] += table_method_stats['styled']
+        stats['error_equations'] += table_method_stats['error']
         
         # Format table
         if options.get('format_tables', True):
@@ -872,16 +877,22 @@ def process_document_content(doc, options):
                         pass
             
             stats['word_tables'] += 1
+        
+        if table_math > 0:
+            stats['debug_log'].append(f"📊 Table {table_idx}: {table_math} equations")
     
-    stats['debug_log'].append(f"✅ Hoàn thành: {stats['math_expressions']} equations, {stats['questions_formatted']} Q&A")
+    stats['debug_log'].append(f"✅ Complete: {stats['math_expressions']} total equations")
+    stats['debug_log'].append(f"   🎯 OMML: {stats['omml_equations']}")
+    stats['debug_log'].append(f"   🎨 Fields: {stats['field_equations']}")
+    stats['debug_log'].append(f"   ✨ Styled: {stats['styled_equations']}")
     
     return new_doc, stats
 
 def main():
     st.markdown("""
     <div style="text-align: center; padding: 20px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 30px;">
-        <h1 style="color: white; margin: 0;">📚 LaTeX Word Processor v7.2</h1>
-        <p style="color: white; margin: 10px 0 0 0;">Enhanced Equation Objects + Complete LaTeX Support</p>
+        <h1 style="color: white; margin: 0;">📚 LaTeX Word Processor v8.0</h1>
+        <p style="color: white; margin: 10px 0 0 0;">TRUE Equation Objects + Enhanced OMML + Complete LaTeX Support</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -889,63 +900,62 @@ def main():
     with st.sidebar:
         st.markdown("### ⚙️ Tùy chọn")
         
-        convert_equations = st.checkbox("🔢 Tạo Equation Objects", value=True,
-                                       help="Chuyển $...$ thành equation objects thực sự trong Word")
-        format_questions = st.checkbox("📝 Format Q&A", value=True)  
-        format_tables = st.checkbox("📊 Format bảng", value=True)
-        convert_markdown = st.checkbox("📋 Markdown Tables", value=True)
-        show_debug = st.checkbox("🔍 Debug", value=False)
+        convert_equations = st.checkbox("🎯 Tạo TRUE Equation Objects", value=True,
+                                       help="Chuyển $...$ thành REAL equation objects trong Word")
+        format_questions = st.checkbox("📝 Format Q&A", value=True,
+                                     help="Format 'Câu X:' và 'A. B. C. D.'")  
+        format_tables = st.checkbox("📊 Format bảng", value=True,
+                                   help="Professional table formatting")
+        convert_markdown = st.checkbox("📋 Markdown → Word Tables", value=True,
+                                     help="Convert | tables | to Word")
+        show_debug = st.checkbox("🔍 Advanced Debug", value=False,
+                               help="Show equation creation details")
         
         st.markdown("---")
-        st.info("💡 **Enhanced Equation Creation:**\n\n🎯 **Method 1:** OMML Equation Objects\n🎨 **Method 2:** Word EQ Fields\n✨ **Method 3:** Professional Math Styling\n\n📐 **Supports:** Superscripts, Prime notation, Parentheses, Fractions, Roots")
+        st.info("🎯 **ADVANCED Equation Creation:**\n\n✨ **Method 1:** Enhanced OMML Objects\n🎨 **Method 2:** Word EQ Fields  \n💫 **Method 3:** Professional Styling\n\n📐 **Support:**\n- Complex Fractions\n- Multiple Prime Notation\n- Nested Expressions\n- Operator Chains")
         
-        st.markdown("### 🧪 Test LaTeX")
-        test_latex = st.text_input("Test LaTeX:", placeholder="A^{prime}")
+        st.markdown("### 🧪 Test LaTeX → Equation")
+        test_latex = st.text_input("Test LaTeX:", placeholder="(π)/(3) + k π")
         if test_latex:
             converted = convert_latex_symbols(test_latex)
-            st.code(f"${test_latex}$ → {converted}")
+            st.code(f"Input:  ${test_latex}$")
+            st.code(f"Output: {converted}")
+            
+            # Show equation type
+            unicode_content = convert_latex_symbols(test_latex)
+            if '(' in unicode_content and ')' in unicode_content and '/' in unicode_content:
+                st.success("🎯 Will create: OMML Fraction Object")
+            elif "'" in unicode_content:
+                st.success("🎯 Will create: OMML Prime Superscript")
+            elif any(c in unicode_content for c in ['²', '³', '⁴', '⁵']):
+                st.success("🎯 Will create: OMML Superscript Object")
+            elif '(' in unicode_content and ')' in unicode_content:
+                st.success("🎯 Will create: OMML Parentheses Object")
+            else:
+                st.info("🎯 Will create: OMML Simple Math Object")
         
-        st.markdown("### 📊 Expected Results")
+        st.markdown("### 📊 Advanced Examples")
         st.markdown("""
-        - `$A^{prime}$` → **A'** (equation)
-        - `$\\left(D A^{prime}\\right)$` → **(D A')** (equation)  
-        - `$[6;8]$` → **[6;8]** (equation)
-        - `$x^2$` → **x²** (equation)
+        **Complex Patterns:**
+        - `$(π)/(3) + k π$` → **π/3 + kπ** (OMML fraction)
+        - `$A^{prime}$` → **A'** (OMML superscript)  
+        - `$B^{prime}C^{prime}$` → **B'C'** (multiple primes)
+        - `$\\left(D A^{prime}\\right)$` → **(DA')** (nested)
+        - `$[6;8]$` → **[6;8]** (interval notation)
         
-        **✨ All as Word equation objects!**
-        """)
-        
-        st.markdown("### 📝 More Examples")
-        st.code("""
-$A^{prime}$ → A' (equation)
-$x^2$ → x² (equation)
-$\\left(x\\right)$ → (x) (equation)
-${B^{prime}}$ → B' (equation)
-$\\frac{a}{b}$ → (a)/(b) (equation)
-$\\pi$ → π (equation)
-
-→ Tạo equation objects thực sự
-  không phải text thường!
-        """)
-        
-        st.markdown("### 📋 Table Support")
-        st.code("""
-| Header | Data |
-|--------|------|
-| $x^2$  | Value|
-
-→ Equations trong tables
+        **🎯 All as TRUE Word equation objects!**
         """)
     
     # Main area
-    st.markdown("### 📁 Upload File")
+    st.markdown("### 📁 Upload Word Document")
+    st.markdown("Upload your .docx file with LaTeX expressions to convert them into **TRUE Word equation objects**")
     
     uploaded_file = st.file_uploader("Chọn file Word (.docx)", type=["docx"])
     
     if uploaded_file:
         st.success(f"✅ {uploaded_file.name}")
         
-        with st.expander("Preview"):
+        with st.expander("📄 Preview"):
             try:
                 doc = Document(uploaded_file)
                 st.info(f"📄 {len(doc.paragraphs)} paragraphs | 📊 {len(doc.tables)} tables")
@@ -957,7 +967,7 @@ $\\pi$ → π (equation)
             except Exception as e:
                 st.error(f"Preview error: {e}")
         
-        if st.button("🚀 Xử lý", type="primary", use_container_width=True):
+        if st.button("🚀 Process Document", type="primary", use_container_width=True):
             options = {
                 'convert_equations': convert_equations,
                 'format_questions': format_questions,
@@ -965,12 +975,12 @@ $\\pi$ → π (equation)
                 'convert_markdown': convert_markdown
             }
             
-            with st.spinner("Đang xử lý..."):
+            with st.spinner("Creating equation objects..."):
                 try:
                     doc = Document(uploaded_file)
                     new_doc, stats = process_document_content(doc, options)
                     
-                    # Save
+                    # Save document
                     buffer = BytesIO()
                     new_doc.save(buffer)
                     buffer.seek(0)
@@ -979,59 +989,82 @@ $\\pi$ → π (equation)
                     filename = f"{uploaded_file.name.rsplit('.', 1)[0]}_processed_{timestamp}.docx"
                     
                     # Results
-                    st.markdown("### 📊 Kết quả")
+                    st.markdown("### 📊 Processing Results")
                     
                     col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("🔢 Equations", stats['math_expressions'])
-                    col2.metric("📝 Q&A", stats['questions_formatted'])
+                    col1.metric("🔢 Total Math", stats['math_expressions'])
+                    col2.metric("📝 Q&A Items", stats['questions_formatted'])
                     col3.metric("📊 Word Tables", stats['word_tables'])
-                    col4.metric("📋 Markdown", stats['markdown_tables'])
+                    col4.metric("📋 Markdown Tables", stats['markdown_tables'])
+                    
+                    # Equation creation breakdown
+                    if stats['math_expressions'] > 0:
+                        st.markdown("### 🎯 Equation Objects Created")
+                        eq_col1, eq_col2, eq_col3 = st.columns(3)
+                        eq_col1.metric("🎯 OMML Objects", stats['omml_equations'], 
+                                     help="True equation objects using OMML")
+                        eq_col2.metric("🎨 EQ Fields", stats['field_equations'],
+                                     help="Word equation fields") 
+                        eq_col3.metric("✨ Styled Math", stats['styled_equations'],
+                                     help="Professional styled fallback")
                     
                     if show_debug:
-                        with st.expander("🔍 Detailed Debug Log"):
+                        with st.expander("🔍 Detailed Processing Log"):
                             for log in stats['debug_log']:
-                                if 'Math' in log or 'equation' in log:
+                                if 'OMML' in log or '🎯' in log:
                                     st.success(log)
-                                elif 'ERROR' in log or 'Error' in log:
+                                elif 'ERROR' in log or '❌' in log:
                                     st.error(log)
-                                elif 'Table' in log or 'Converted' in log:
+                                elif 'Table' in log or '📋' in log or '📊' in log:
                                     st.info(log)
                                 else:
                                     st.text(log)
                     
-                    # Download
+                    # Download button
                     st.download_button(
-                        "⬇️ Tải file",
+                        "⬇️ Download Processed File",
                         buffer.getvalue(),
                         filename,
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         use_container_width=True
                     )
                     
+                    # Success messages
                     total_processed = (stats['math_expressions'] + stats['questions_formatted'] + 
                                      stats['word_tables'] + stats['markdown_tables'])
                     
                     if total_processed > 0:
-                        st.success("🎉 Xử lý hoàn thành!")
+                        st.success("🎉 Processing Complete!")
                         
-                        success_messages = []
                         if stats['math_expressions'] > 0:
-                            success_messages.append(f"🔢 **{stats['math_expressions']} equation objects** được tạo thành công")
-                        if stats['markdown_tables'] > 0:
-                            success_messages.append(f"📋 **{stats['markdown_tables']} markdown tables** được chuyển đổi")
-                        if stats['questions_formatted'] > 0:
-                            success_messages.append(f"📝 **{stats['questions_formatted']} Q&A items** được format")
-                        if stats['word_tables'] > 0:
-                            success_messages.append(f"📊 **{stats['word_tables']} Word tables** được format")
+                            eq_breakdown = []
+                            if stats['omml_equations'] > 0:
+                                eq_breakdown.append(f"{stats['omml_equations']} OMML objects")
+                            if stats['field_equations'] > 0:
+                                eq_breakdown.append(f"{stats['field_equations']} EQ fields")
+                            if stats['styled_equations'] > 0:
+                                eq_breakdown.append(f"{stats['styled_equations']} styled math")
+                            
+                            if eq_breakdown:
+                                st.info(f"🔢 **{stats['math_expressions']} equation objects** created: {', '.join(eq_breakdown)}")
                         
-                        for msg in success_messages:
-                            st.info(msg)
+                        if stats['markdown_tables'] > 0:
+                            st.info(f"📋 **{stats['markdown_tables']} markdown tables** converted")
+                        if stats['questions_formatted'] > 0:
+                            st.info(f"📝 **{stats['questions_formatted']} Q&A items** formatted")
+                        if stats['word_tables'] > 0:
+                            st.info(f"📊 **{stats['word_tables']} Word tables** formatted")
+                        
+                        # Special notice for OMML equations
+                        if stats['omml_equations'] > 0:
+                            st.balloons()
+                            st.success(f"🎯 **{stats['omml_equations']} TRUE equation objects** created! These appear as native Word equations.")
                             
                     else:
-                        st.warning("⚠️ Không tìm thấy LaTeX, Q&A hoặc tables để xử lý")
+                        st.warning("⚠️ No LaTeX, Q&A, or tables found to process")
                 
                 except Exception as e:
-                    st.error(f"❌ Lỗi: {str(e)}")
+                    st.error(f"❌ Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
