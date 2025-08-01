@@ -717,7 +717,7 @@ def create_word_table(doc, table_data, options):
     return math_count, total_method_stats
 
 def process_document_content(doc, options):
-    """Xử lý document content - Safe version"""
+    """Xu ly document content - Safe version"""
     new_doc = Document()
     
     stats = {
@@ -733,7 +733,7 @@ def process_document_content(doc, options):
         'debug_log': []
     }
     
-    stats['debug_log'].append(f"🚀 Processing: {len(doc.paragraphs)} paragraphs, {len(doc.tables)} tables")
+    stats['debug_log'].append(f"Processing: {len(doc.paragraphs)} paragraphs, {len(doc.tables)} tables")
     
     # Process paragraphs safely
     i = 0
@@ -772,9 +772,9 @@ def process_document_content(doc, options):
                             if method in stats:
                                 stats[f'{method}_equations'] += count
                         stats['markdown_tables'] += 1
-                        stats['debug_log'].append(f"📋 Converted table: {len(table_data)} rows")
+                        stats['debug_log'].append(f"Converted table: {len(table_data)} rows")
                     except Exception as e:
-                        stats['debug_log'].append(f"❌ Table error: {str(e)}")
+                        stats['debug_log'].append(f"Table error: {str(e)}")
                 
                 i = j
                 continue
@@ -785,7 +785,7 @@ def process_document_content(doc, options):
         try:
             if format_question_answer(new_para, text):
                 stats['questions_formatted'] += 1
-                stats['debug_log'].append(f"📝 P{i}: Q&A formatted")
+                stats['debug_log'].append(f"P{i}: Q&A formatted")
             else:
                 math_count, method_stats = process_text_with_math(new_para, text)
                 stats['math_expressions'] += math_count
@@ -796,14 +796,14 @@ def process_document_content(doc, options):
                 if math_count > 0:
                     omml_count = method_stats.get('omml', 0)
                     styled_count = method_stats.get('styled', 0) + method_stats.get('fallback', 0)
-                    stats['debug_log'].append(f"🔢 P{i}: {math_count} equations ({omml_count} OMML, {styled_count} styled)")
+                    stats['debug_log'].append(f"P{i}: {math_count} equations ({omml_count} OMML, {styled_count} styled)")
         except Exception as e:
             # Fallback to plain text
             new_para.clear()
             run = new_para.add_run(text)
             run.font.size = Pt(12)
             run.font.name = 'Times New Roman'
-            stats['debug_log'].append(f"❌ P{i}: Error, used plain text")
+            stats['debug_log'].append(f"P{i}: Error, used plain text")
         
         i += 1
     
@@ -865,22 +865,22 @@ def process_document_content(doc, options):
                 stats['word_tables'] += 1
             
             if table_math > 0:
-                stats['debug_log'].append(f"📊 Table {table_idx}: {table_math} equations")
+                stats['debug_log'].append(f"Table {table_idx}: {table_math} equations")
                 
         except Exception as e:
-            stats['debug_log'].append(f"❌ Table {table_idx} error: {str(e)}")
+            stats['debug_log'].append(f"Table {table_idx} error: {str(e)}")
             continue
     
-    stats['debug_log'].append(f"✅ Complete: {stats['math_expressions']} total equations")
-    stats['debug_log'].append(f"   🎯 OMML: {stats['omml_equations']}")
-    stats['debug_log'].append(f"   ✨ Styled: {stats['styled_equations'] + stats['fallback_equations']}")
+    stats['debug_log'].append(f"Complete: {stats['math_expressions']} total equations")
+    stats['debug_log'].append(f"   OMML: {stats['omml_equations']}")
+    stats['debug_log'].append(f"   Styled: {stats['styled_equations'] + stats['fallback_equations']}")
     
     return new_doc, stats
 
 def main():
     st.markdown("""
     <div style="text-align: center; padding: 20px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 30px;">
-        <h1 style="color: white; margin: 0;">📚 LaTeX Word Processor v8.1</h1>
+        <h1 style="color: white; margin: 0;">LaTeX Word Processor v8.1</h1>
         <p style="color: white; margin: 10px 0 0 0;">Fixed File Corruption + Safe Equation Objects + Complete LaTeX Support</p>
     </div>
     """, unsafe_allow_html=True)
@@ -5463,19 +5463,80 @@ def main():
         **🛡️ All methods include safe fallbacks!**
         """)
     
+def main():
+    st.markdown("""
+    <div style="text-align: center; padding: 20px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 30px;">
+        <h1 style="color: white; margin: 0;">LaTeX Word Processor v8.1</h1>
+        <p style="color: white; margin: 10px 0 0 0;">Fixed File Corruption + Safe Equation Objects + Complete LaTeX Support</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Sidebar
+    with st.sidebar:
+        st.markdown("### Tuy chon")
+        
+        convert_equations = st.checkbox("Tao TRUE Equation Objects", value=True,
+                                       help="Chuyen $...$ thanh REAL equation objects trong Word")
+        format_questions = st.checkbox("Format Q&A", value=True,
+                                     help="Format 'Cau X:' va 'A. B. C. D.'")  
+        format_tables = st.checkbox("Format bang", value=True,
+                                   help="Professional table formatting")
+        convert_markdown = st.checkbox("Markdown -> Word Tables", value=True,
+                                     help="Convert | tables | to Word")
+        show_debug = st.checkbox("Advanced Debug", value=False,
+                               help="Show equation creation details")
+        
+        st.markdown("---")
+        st.info("SAFE Equation Creation:\n\nMethod 1: Safe OMML Objects\nMethod 2: Enhanced Styling\nMethod 3: Fallback Protection\n\nFixed Issues:\n- File Corruption\n- XML Validation\n- Safe Error Handling\n- Robust Fallbacks")
+        
+        st.markdown("### Test LaTeX -> Safe Equation")
+        test_latex = st.text_input("Test LaTeX:", placeholder="A^{prime}")
+        if test_latex:
+            try:
+                converted = convert_latex_symbols(test_latex)
+                st.code(f"Input:  ${test_latex}$")
+                st.code(f"Output: {converted}")
+                
+                # Show equation type safely
+                unicode_content = convert_latex_symbols(test_latex)
+                if '(' in unicode_content and ')' in unicode_content and '/' in unicode_content:
+                    st.success("Will create: Safe OMML Fraction")
+                elif "'" in unicode_content:
+                    st.success("Will create: Safe OMML Prime Superscript")
+                elif any(c in unicode_content for c in ['²', '³', '⁴', '⁵']):
+                    st.success("Will create: Safe OMML Superscript")
+                elif '(' in unicode_content and ')' in unicode_content:
+                    st.success("Will create: Safe OMML Parentheses")
+                else:
+                    st.info("Will create: Safe OMML Simple Math")
+            except Exception:
+                st.warning("Test failed - will use styled fallback")
+        
+        st.markdown("### Safe Examples")
+        st.markdown("""
+        **Safely Supported:**
+        - A^{prime} -> A' (safe OMML)
+        - (π)/(3) -> π/3 (safe fraction)  
+        - x^2 -> x² (safe superscript)
+        - \\left(x\\right) -> (x) (safe parentheses)
+        - [6;8] -> [6;8] (safe text)
+        
+        All methods include safe fallbacks!
+        """)
+    
     # Main area
-    st.markdown("### 📁 Upload Word Document")
+    st.markdown("### Upload Word Document")
     st.markdown("Upload your .docx file with LaTeX expressions to convert them into **TRUE Word equation objects**")
     
-    uploaded_file = st.file_uploader("Chọn file Word (.docx)", type=["docx"])
+    uploaded_file = st.file_uploader("Chon file Word (.docx)", type=["docx"])
     
     if uploaded_file:
-        st.success(f"✅ {uploaded_file.name}")
+        st.success(f"File uploaded: {uploaded_file.name}")
         
-        with st.expander("📄 Preview"):
+        with st.expander("Preview"):
             try:
                 doc = Document(uploaded_file)
-                st.info(f"📄 {len(doc.paragraphs)} paragraphs | 📊 {len(doc.tables)} tables")
+                st.info(f"Document: {len(doc.paragraphs)} paragraphs | {len(doc.tables)} tables")
                 
                 for i, para in enumerate(doc.paragraphs[:5]):
                     if para.text.strip():
@@ -5484,7 +5545,7 @@ def main():
             except Exception as e:
                 st.error(f"Preview error: {e}")
         
-        if st.button("🚀 Process Document", type="primary", use_container_width=True):
+        if st.button("Process Document", type="primary", use_container_width=True):
             options = {
                 'convert_equations': convert_equations,
                 'format_questions': format_questions,
@@ -5506,41 +5567,41 @@ def main():
                     filename = f"{uploaded_file.name.rsplit('.', 1)[0]}_processed_{timestamp}.docx"
                     
                     # Results
-                    st.markdown("### 📊 Processing Results")
+                    st.markdown("### Processing Results")
                     
                     col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("🔢 Total Math", stats['math_expressions'])
-                    col2.metric("📝 Q&A Items", stats['questions_formatted'])
-                    col3.metric("📊 Word Tables", stats['word_tables'])
-                    col4.metric("📋 Markdown Tables", stats['markdown_tables'])
+                    col1.metric("Total Math", stats['math_expressions'])
+                    col2.metric("Q&A Items", stats['questions_formatted'])
+                    col3.metric("Word Tables", stats['word_tables'])
+                    col4.metric("Markdown Tables", stats['markdown_tables'])
                     
                     # Equation creation breakdown
                     if stats['math_expressions'] > 0:
-                        st.markdown("### 🎯 Equation Objects Created")
+                        st.markdown("### Equation Objects Created")
                         eq_col1, eq_col2, eq_col3 = st.columns(3)
-                        eq_col1.metric("🎯 OMML Objects", stats['omml_equations'], 
+                        eq_col1.metric("OMML Objects", stats['omml_equations'], 
                                      help="True equation objects using OMML")
-                        eq_col2.metric("🎨 EQ Fields", stats['field_equations'],
+                        eq_col2.metric("EQ Fields", stats['field_equations'],
                                      help="Word equation fields") 
                         styled_total = stats['styled_equations'] + stats.get('fallback_equations', 0)
-                        eq_col3.metric("✨ Styled Math", styled_total,
+                        eq_col3.metric("Styled Math", styled_total,
                                      help="Professional styled equations")
                     
                     if show_debug:
-                        with st.expander("🔍 Detailed Processing Log"):
+                        with st.expander("Detailed Processing Log"):
                             for log in stats['debug_log']:
-                                if 'OMML' in log or '🎯' in log:
+                                if 'OMML' in log:
                                     st.success(log)
-                                elif 'ERROR' in log or '❌' in log:
+                                elif 'ERROR' in log:
                                     st.error(log)
-                                elif 'Table' in log or '📋' in log or '📊' in log:
+                                elif 'Table' in log:
                                     st.info(log)
                                 else:
                                     st.text(log)
                     
                     # Download button
                     st.download_button(
-                        "⬇️ Download Processed File",
+                        "Download Processed File",
                         buffer.getvalue(),
                         filename,
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -5552,7 +5613,7 @@ def main():
                                      stats['word_tables'] + stats['markdown_tables'])
                     
                     if total_processed > 0:
-                        st.success("🎉 Processing Complete!")
+                        st.success("Processing Complete!")
                         
                         if stats['math_expressions'] > 0:
                             eq_breakdown = []
@@ -5565,24 +5626,24 @@ def main():
                                 eq_breakdown.append(f"{styled_total} styled equations")
                             
                             if eq_breakdown:
-                                st.info(f"🔢 **{stats['math_expressions']} equation objects** created: {', '.join(eq_breakdown)}")
+                                st.info(f"{stats['math_expressions']} equation objects created: {', '.join(eq_breakdown)}")
                         
                         if stats['markdown_tables'] > 0:
-                            st.info(f"📋 **{stats['markdown_tables']} markdown tables** converted")
+                            st.info(f"{stats['markdown_tables']} markdown tables converted")
                         if stats['questions_formatted'] > 0:
-                            st.info(f"📝 **{stats['questions_formatted']} Q&A items** formatted")
+                            st.info(f"{stats['questions_formatted']} Q&A items formatted")
                         if stats['word_tables'] > 0:
-                            st.info(f"📊 **{stats['word_tables']} Word tables** formatted")
+                            st.info(f"{stats['word_tables']} Word tables formatted")
                         
                         # Success notice for OMML equations - NO BALLOONS
                         if stats['omml_equations'] > 0:
-                            st.success(f"🎯 **{stats['omml_equations']} TRUE equation objects** created successfully!")
+                            st.success(f"{stats['omml_equations']} TRUE equation objects created successfully!")
                             
                     else:
-                        st.warning("⚠️ No LaTeX, Q&A, or tables found to process")
+                        st.warning("No LaTeX, Q&A, or tables found to process")
                 
                 except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
+                    st.error(f"Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
