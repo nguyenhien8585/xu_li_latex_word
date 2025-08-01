@@ -137,11 +137,62 @@ def format_question_and_answers(paragraph):
         paragraph.add_run(original_text if 'original_text' in locals() else text)
         return False
 
-def format_table_properly(table):
-    """Format bảng đúng cách"""
+def process_cell_content(cell, text, options):
+    """Xử lý nội dung trong một cell của table với LaTeX và Q&A formatting"""
+    try:
+        if not text or not text.strip():
+            return 0
+        
+        latex_processed = 0
+        
+        # Clear cell content
+        cell.text = ""
+        
+        # Get first paragraph (or create one)
+        if len(cell.paragraphs) == 0:
+            paragraph = cell.add_paragraph()
+        else:
+            paragraph = cell.paragraphs[0]
+            paragraph.clear()
+        
+        # Try to format as question/answer first
+        formatted_as_qa = False
+        if options.get('format_questions', True):
+            # Set text vào paragraph trước để test
+            paragraph.add_run(text)
+            if format_question_and_answers(paragraph):
+                formatted_as_qa = True
+        
+        # If not formatted as Q&A, process LaTeX
+        if not formatted_as_qa:
+            paragraph.clear()
+            if options.get('convert_equations', True):
+                latex_processed = process_paragraph_with_latex(paragraph, text)
+            else:
+                paragraph.add_run(text)
+        
+        # Apply basic formatting
+        if options.get('fix_formatting', True):
+            for run in paragraph.runs:
+                if not run.font.name:
+                    run.font.name = 'Times New Roman'
+                if not run.font.size:
+                    run.font.size = Pt(11)  # Slightly smaller for table cells
+        
+        return latex_processed
+        
+    except Exception as e:
+        # Fallback: set plain text
+        cell.text = text
+        return 0
+
+def format_table_properly(table, options):
+    """Format bảng đúng cách và xử lý LaTeX trong cells"""
     try:
         if not table or len(table.rows) == 0:
-            return False
+            return False, 0
+        
+        latex_total = 0
         
         # Set table alignment
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -149,6 +200,12 @@ def format_table_properly(table):
         # Format header row (first row)
         header_row = table.rows[0]
         for cell in header_row.cells:
+            # Process content with LaTeX
+            cell_text = cell.text.strip()
+            if cell_text:
+                latex_count = process_cell_content(cell, cell_text, options)
+                latex_total += latex_count
+            
             # Bold and center header
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
@@ -168,16 +225,20 @@ def format_table_properly(table):
         for i in range(1, len(table.rows)):
             row = table.rows[i]
             for cell in row.cells:
+                # Process content with LaTeX
+                cell_text = cell.text.strip()
+                if cell_text:
+                    latex_count = process_cell_content(cell, cell_text, options)
+                    latex_total += latex_count
+                
+                # Center align paragraphs
                 for paragraph in cell.paragraphs:
-                    for run in paragraph.runs:
-                        run.font.size = Pt(11)
-                        run.font.name = 'Times New Roman'
                     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        return True
+        return True, latex_total
         
     except Exception as e:
-        return False
+        return False, 0
 
 def find_latex_in_text(text):
     """Tìm tất cả LaTeX expressions trong text"""
@@ -262,6 +323,7 @@ def process_document_comprehensive(doc, options):
         questions_formatted = 0
         tables_formatted = 0
         paragraphs_cleaned = 0
+        table_latex_processed = 0
         
         # Debug info
         debug_log = []
@@ -338,29 +400,42 @@ def process_document_comprehensive(doc, options):
                 # Copy table structure
                 new_table = new_doc.add_table(rows=len(table.rows), cols=len(table.rows[0].cells) if table.rows else 0)
                 
-                # Copy content
+                # Copy content và process LaTeX trong từng cell
                 for r in range(len(table.rows)):
                     for c in range(len(table.rows[r].cells)):
                         try:
                             original_cell = table.rows[r].cells[c]
                             new_cell = new_table.rows[r].cells[c]
-                            new_cell.text = original_cell.text
-                        except:
-                            pass
+                            
+                            # Process cell content với LaTeX
+                            cell_text = original_cell.text.strip()
+                            if cell_text:
+                                latex_count = process_cell_content(new_cell, cell_text, options)
+                                table_latex_processed += latex_count
+                            
+                        except Exception as cell_error:
+                            debug_log.append(f"    -> ERROR in cell [{r}][{c}]: {str(cell_error)}")
                 
-                # Format table
+                # Format table structure
                 if options.get('format_tables', True):
-                    if format_table_properly(new_table):
+                    formatted, additional_latex = format_table_properly(new_table, options)
+                    if formatted:
                         tables_formatted += 1
-                        debug_log.append(f"  -> Table {i} formatted successfully")
+                        table_latex_processed += additional_latex
+                        debug_log.append(f"  -> Table {i} formatted successfully, {additional_latex} LaTeX expressions processed")
                     else:
                         debug_log.append(f"  -> Table {i} formatting failed")
                 
             except Exception as e:
                 debug_log.append(f"  -> ERROR in table {i}: {str(e)}")
         
+        # Update total LaTeX processed
+        total_latex = latex_processed + table_latex_processed
+        
         return new_doc, {
-            'processed_count': latex_processed,
+            'processed_count': total_latex,
+            'paragraph_latex': latex_processed,
+            'table_latex': table_latex_processed,
             'error_count': 0,  # We don't track errors in this version
             'cleaned_paragraphs': paragraphs_cleaned,
             'formatted_questions': questions_formatted,
@@ -377,6 +452,8 @@ def process_document_comprehensive(doc, options):
         
         return error_doc, {
             'processed_count': 0,
+            'paragraph_latex': 0,
+            'table_latex': 0,
             'error_count': 1,
             'cleaned_paragraphs': 0,
             'formatted_questions': 0,
@@ -390,8 +467,8 @@ def main():
     # Header
     st.markdown("""
     <div style="text-align: center; padding: 20px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-bottom: 30px;">
-        <h1 style="color: white; margin: 0;">📚 Xử lý LaTeX & Format trong Word - v6.0</h1>
-        <p style="color: white; margin: 10px 0 0 0;">Chuyển đổi LaTeX, Format câu hỏi trắc nghiệm & Xử lý bảng</p>
+        <h1 style="color: white; margin: 0;">📚 Xử lý LaTeX & Format trong Word - v6.1</h1>
+        <p style="color: white; margin: 10px 0 0 0;">Chuyển đổi LaTeX, Format câu hỏi trắc nghiệm & Xử lý bảng (Bao gồm LaTeX trong bảng)</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -400,10 +477,10 @@ def main():
         st.markdown("### ⚙️ Tùy chọn xử lý")
         
         convert_equations = st.checkbox("🔢 Chuyển đổi công thức LaTeX", value=True,
-                                       help="Chuyển $...$, ${...}$ thành ký hiệu toán học Unicode")
+                                       help="Chuyển $...$, ${...}$ thành ký hiệu toán học Unicode (bao gồm trong bảng)")
         
         format_questions = st.checkbox("📝 Format câu hỏi trắc nghiệm", value=True,
-                                      help="In đậm câu hỏi, tô màu xanh các đáp án A, B, C, D")
+                                      help="In đậm câu hỏi, tô màu xanh các đáp án A, B, C, D (bao gồm trong bảng)")
         
         format_tables = st.checkbox("📊 Format bảng", value=True,
                                    help="Căn chỉnh bảng, in đậm header, tô màu nền")
@@ -430,6 +507,8 @@ def main():
         - `$\\frac{a}{b}$` → (a)/(b)
         - `$\\sqrt{x}$` → √(x)
         - `$\\pi$` → π
+        
+        **🆕 Mới: Xử lý LaTeX trong bảng!**
         """)
     
     # Main content
@@ -457,6 +536,15 @@ def main():
                         if para.text.strip():
                             preview = para.text[:80] + "..." if len(para.text) > 80 else para.text
                             st.text(f"{i+1}. {preview}")
+                    
+                    # Show table preview
+                    if doc.tables:
+                        st.markdown("**Bảng đầu tiên:**")
+                        table = doc.tables[0]
+                        if table.rows:
+                            for r, row in enumerate(table.rows[:2]):  # Show first 2 rows
+                                row_text = " | ".join([cell.text[:20] + "..." if len(cell.text) > 20 else cell.text for cell in row.cells])
+                                st.text(f"Row {r+1}: {row_text}")
                             
                 except Exception as e:
                     st.warning(f"Lỗi preview: {e}")
@@ -490,15 +578,21 @@ def main():
                         # Results
                         st.markdown("### 📊 Kết quả")
                         
-                        cols = st.columns(4)
+                        cols = st.columns(5)
                         with cols[0]:
-                            st.metric("🔢 LaTeX", stats['processed_count'])
+                            st.metric("🔢 LaTeX (Tổng)", stats['processed_count'])
                         with cols[1]:
-                            st.metric("📝 Câu hỏi", stats['formatted_questions'])
+                            st.metric("📄 LaTeX (Đoạn văn)", stats['paragraph_latex'])
                         with cols[2]:
-                            st.metric("📊 Bảng", stats['formatted_tables'])
+                            st.metric("📊 LaTeX (Bảng)", stats['table_latex'])
                         with cols[3]:
-                            st.metric("🧹 Làm sạch", stats['cleaned_paragraphs'])
+                            st.metric("📝 Câu hỏi", stats['formatted_questions'])
+                        with cols[4]:
+                            st.metric("🗂️ Bảng", stats['formatted_tables'])
+                        
+                        # Additional metrics
+                        if stats['cleaned_paragraphs'] > 0:
+                            st.info(f"🧹 Đã làm sạch {stats['cleaned_paragraphs']} đoạn văn")
                         
                         # Debug info
                         if show_debug and stats.get('debug_info'):
@@ -519,6 +613,8 @@ def main():
                         # Success message
                         if stats['processed_count'] > 0 or stats['formatted_questions'] > 0 or stats['formatted_tables'] > 0:
                             st.success("🎉 Xử lý thành công!")
+                            if stats['table_latex'] > 0:
+                                st.info(f"✨ Đã xử lý {stats['table_latex']} LaTeX expressions trong bảng!")
                         else:
                             st.warning("⚠️ Không tìm thấy nội dung cần xử lý")
                             
@@ -528,15 +624,14 @@ def main():
     with col2:
         st.markdown("### 💡 Tips")
         
-        with st.expander("🧪 Test LaTeX"):
+        with st.expander("🧪 Test LaTeX trong bảng"):
             st.code("""
-Thử với nội dung này:
+Tạo bảng với nội dung:
 
-Câu 1. Phương trình $x^2 = 4$ có nghiệm là
-A. $x = \\pm 2$
-B. $x = \\frac{4}{2}$  
-C. $x = \\sqrt{4}$
-D. Tất cả đều đúng
+| Phương trình | Nghiệm |
+|-------------|--------|
+| $x^2 = 4$   | $x = \\pm 2$ |
+| $\\frac{a}{b} = 2$ | $a = 2b$ |
             """)
         
         with st.expander("🎯 Ví dụ format"):
@@ -558,7 +653,7 @@ D. Tất cả đều đúng
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 10px;">
-        <p>📚 LaTeX & Word Processor v6.0 | 🔧 Simplified & Reliable</p>
+        <p>📚 LaTeX & Word Processor v6.1 | 🔧 Now with Table LaTeX Processing!</p>
     </div>
     """, unsafe_allow_html=True)
 
