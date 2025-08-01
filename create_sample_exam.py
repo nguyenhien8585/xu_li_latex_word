@@ -1,196 +1,291 @@
 #!/usr/bin/env python3
 """
-📝 Script tạo file đề thi mẫu để test ứng dụng
-Chạy: python create_sample_exam.py
+📝 Script tạo file đề thi mẫu với LaTeX math và Markdown tables
+Để test tính năng mới của ứng dụng
 """
 
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-def create_sample_exam():
-    """Tạo file đề thi mẫu với đầy đủ các loại câu hỏi"""
+def create_advanced_math_exam():
+    """Tạo đề thi có chứa công thức LaTeX và bảng Markdown"""
     
     doc = Document()
     
     # Tiêu đề
-    title = doc.add_heading('ĐỀ THI MẪU - TOÁN HỌC', level=1)
+    title = doc.add_heading('ĐỀ THI TOÁN HỌC NÂNG CAO', level=1)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     # Thông tin đề thi
-    info = doc.add_paragraph('Thời gian: 90 phút | Số câu: 15 câu')
+    info = doc.add_paragraph('Thời gian: 120 phút | Có sử dụng công thức LaTeX và bảng dữ liệu')
     info.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    doc.add_paragraph()  # Khoảng trống
+    doc.add_paragraph()
     
-    # PHẦN I: TRẮC NGHIỆM
-    doc.add_heading('PHẦN I: CÂU HỎI TRẮC NGHIỆM (10 câu)', level=2)
+    # PHẦN I: TRẮC NGHIỆM VỚI LATEX
+    doc.add_heading('PHẦN I: CÂU HỎI TRẮC NGHIỆM (8 câu)', level=2)
     
-    # Câu trắc nghiệm mẫu
-    multiple_choice_questions = [
+    math_questions = [
         {
             'num': 1,
-            'question': 'Tập xác định của hàm số y = √(x-1) là:',
-            'A': '[1; +∞)',
-            'B': '(-∞; 1]', 
-            'C': '(1; +∞)',
-            'D': 'ℝ'
+            'question': r'Giới hạn $\lim_{x \to 0} \frac{\sin x}{x}$ có giá trị bằng:',
+            'A': '0',
+            'B': '1', 
+            'C': '$+\infty$',
+            'D': 'Không tồn tại'
         },
         {
             'num': 2,
-            'question': 'Giá trị của lim(x→∞) (2x+1)/(x-3) là:',
-            'A': '0',
-            'B': '1',
-            'C': '2', 
-            'D': '+∞'
+            'question': r'Đạo hàm của hàm số $f(x) = e^{x^2}$ là:',
+            'A': r'$e^{x^2}$',
+            'B': r'$2xe^{x^2}$',
+            'C': r'$x^2 e^{x^2}$',
+            'D': r'$2e^{x^2}$'
         },
         {
             'num': 3,
-            'question': 'Đạo hàm của hàm số f(x) = x³ - 2x + 1 là:',
-            'A': '3x² - 2',
-            'B': '3x² + 2',
-            'C': 'x² - 2x',
-            'D': '3x - 2'
+            'question': r'Tích phân $\int_0^1 x^2 dx$ có giá trị:',
+            'A': r'$\frac{1}{2}$',
+            'B': r'$\frac{1}{3}$',
+            'C': r'$\frac{2}{3}$',
+            'D': '1'
         },
         {
             'num': 4,
-            'question': 'Phương trình x² - 5x + 6 = 0 có nghiệm là:',
-            'A': 'x = 1; x = 6',
-            'B': 'x = 2; x = 3',
-            'C': 'x = -2; x = -3',
+            'question': r'Phương trình $x^2 + 4x + 4 = 0$ có nghiệm kép là:',
+            'A': '$x = -2$',
+            'B': '$x = 2$', 
+            'C': '$x = 4$',
             'D': 'Vô nghiệm'
         },
         {
             'num': 5,
-            'question': 'Giá trị nhỏ nhất của hàm số y = x² - 4x + 5 trên ℝ là:',
-            'A': '1',
-            'B': '2',
-            'C': '3',
-            'D': '5'
+            'question': r'Công thức tính diện tích hình tròn có bán kính $r$ là:',
+            'A': r'$S = \pi r$',
+            'B': r'$S = \pi r^2$',
+            'C': r'$S = 2\pi r$', 
+            'D': r'$S = \frac{\pi r^2}{2}$'
         }
     ]
     
-    for q in multiple_choice_questions:
+    for q in math_questions:
         # Câu hỏi
-        question_para = doc.add_paragraph()
-        question_para.add_run(f"Câu {q['num']}. ").bold = True
-        question_para.add_run(q['question'])
+        question_text = f"Câu {q['num']}. {q['question']}\n"
+        question_text += f"A. {q['A']}\n"
+        question_text += f"B. {q['B']}\n" 
+        question_text += f"C. {q['C']}\n"
+        question_text += f"D. {q['D']}"
         
-        # Đáp án
-        for option in ['A', 'B', 'C', 'D']:
-            option_para = doc.add_paragraph()
-            option_para.add_run(f"{option}. ").bold = True
-            option_para.add_run(q[option])
-        
-        doc.add_paragraph()  # Khoảng trống
-    
-    # PHẦN II: ĐÚNG/SAI
-    doc.add_heading('PHẦN II: CÂU HỎI ĐÚNG/SAI (3 câu)', level=2)
-    
-    true_false_questions = [
-        {
-            'num': 6,
-            'question': 'Hàm số y = sin(x) có chu kỳ là 2π.'
-        },
-        {
-            'num': 7,
-            'question': 'Đạo hàm của hàm số y = e^x là e^x.'
-        },
-        {
-            'num': 8,
-            'question': 'Tích phân ∫₀¹ x dx = 1/2.'
-        }
-    ]
-    
-    for q in true_false_questions:
-        question_para = doc.add_paragraph()
-        question_para.add_run(f"Câu {q['num']}. ").bold = True
-        question_para.add_run(q['question'])
+        doc.add_paragraph(question_text)
         doc.add_paragraph()
     
-    # PHẦN III: TỰ LUẬN
+    # PHẦN II: CÂU HỎI VỚI BẢNG MARKDOWN
+    doc.add_heading('PHẦN II: PHÂN TÍCH DỮ LIỆU (2 câu)', level=2)
+    
+    # Câu 6: Bảng thống kê
+    doc.add_paragraph("""Câu 6. Cho bảng thống kê điểm thi của lớp 12A:
+
+| Điểm | Số học sinh | Tần suất |
+|------|-------------|----------|
+| 0-2  | 2           | 6.7%     |
+| 3-4  | 5           | 16.7%    |
+| 5-6  | 10          | 33.3%    |
+| 7-8  | 8           | 26.7%    |
+| 9-10 | 5           | 16.7%    |
+
+Điểm trung bình của lớp gần nhất với giá trị nào?
+A. 5.8
+B. 6.2
+C. 6.5  
+D. 7.0""")
+    
+    doc.add_paragraph()
+    
+    # Câu 7: Hàm số với LaTeX và bảng
+    doc.add_paragraph(r"""Câu 7. Cho hàm số $y = x^3 - 3x^2 + 2$ có bảng biến thiên:
+
+| x     | $-\infty$ | 0 | 2 | $+\infty$ |
+|-------|-----------|---|---|-----------|
+| y'    | +         | 0 | - | 0         |
+| y     | $-\infty$ | 2 | -2| $+\infty$ |
+
+Hàm số đạt cực đại tại:
+A. $x = 0$
+B. $x = 2$
+C. $x = -2$ 
+D. Không có cực đại""")
+    
+    doc.add_paragraph()
+    
+    # PHẦN III: TỰ LUẬN VỚI CÔNG THỨC PHỨC TẠP
     doc.add_heading('PHẦN III: CÂU HỎI TỰ LUẬN (2 câu)', level=2)
     
-    essay_questions = [
-        {
-            'num': 9,
-            'question': 'Cho hàm số y = x³ - 3x² + 2. Tìm cực trị của hàm số và vẽ đồ thị.'
-        },
-        {
-            'num': 10,
-            'question': 'Giải phương trình lượng giác: 2sin²x + 3cosx - 3 = 0 trên [0; 2π].'
-        }
-    ]
+    # Câu 8
+    doc.add_paragraph(r"""Câu 8. Cho tích phân $I = \int_0^{\pi/2} \sin^2 x \cos x dx$
+
+a) Tính tích phân I bằng phương pháp đổi biến số.
+b) Chứng minh rằng $I = \frac{1}{3}$""")
     
-    for q in essay_questions:
-        question_para = doc.add_paragraph()
-        question_para.add_run(f"Câu {q['num']}. ").bold = True
-        question_para.add_run(q['question'])
-        doc.add_paragraph()
-        doc.add_paragraph()  # Khoảng trống cho trả lời
+    doc.add_paragraph()
+    
+    # Câu 9  
+    doc.add_paragraph(r"""Câu 9. Cho phương trình vi phân: $\frac{dy}{dx} + 2y = e^{-x}$
+
+a) Giải phương trình vi phân tuyến tính cấp 1 này.
+b) Tìm nghiệm riêng thỏa mãn điều kiện đầu $y(0) = 1$.
+c) Vẽ đồ thị nghiệm trong khoảng $[0, 3]$.""")
+    
+    doc.add_paragraph()
     
     # Lưu file
-    doc.save('example_input.docx')
-    print("✅ Đã tạo file 'example_input.docx'")
-    print("🚀 Có thể sử dụng file này để test ứng dụng!")
+    doc.save('advanced_math_exam.docx')
+    print("✅ Đã tạo file 'advanced_math_exam.docx'")
+    print("🧮 File này chứa công thức LaTeX và bảng Markdown!")
 
-def create_complex_sample():
-    """Tạo file đề thi phức tạp hơn để test edge cases"""
+def create_physics_exam_with_formulas():
+    """Tạo đề thi Vật lý với nhiều công thức"""
     
     doc = Document()
     
-    # Tiêu đề
-    title = doc.add_heading('ĐỀ THI PHỨC TẠP - VẬT LÝ', level=1)
+    title = doc.add_heading('ĐỀ THI VẬT LÝ 12 - ĐIỆN TỪHỌC', level=1)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     doc.add_paragraph()
     
-    # Câu hỏi có format khác nhau
-    complex_questions = [
-        "Câu 1.Tốc độ ánh sáng trong chân không là bao nhiều?\nA.3×10⁸ m/s\nB.3×10⁶ m/s\nC.3×10⁵ m/s\nD.3×10⁷ m/s",
-        
-        "Câu 2. Định luật Ohm được phát biểu như thế nào?\n\nA. U = I × R\nB. P = U × I\nC. E = m × c²\nD. F = m × a",
-        
-        "Câu3.Đơn vị của cường độ dòng điện là gì?\nA.Ampe (A)\nB.Volt (V)\nC.Ohm (Ω)\nD.Watt (W)",
-        
-        "Câu 4. Trong dao động điều hòa, chu kỳ T liên hệ với tần số f theo công thức nào?\nA. T = f\nB. T = 1/f\nC. T = 2πf\nD. T = f/2π",
+    physics_questions = [
+        {
+            'num': 1,
+            'question': r'Công thức tính lực Lorentz tác dụng lên điện tích $q$ chuyển động với vận tốc $\vec{v}$ trong từ trường $\vec{B}$ là:',
+            'A': r'$\vec{F} = q\vec{v} \times \vec{B}$',
+            'B': r'$\vec{F} = q\vec{E}$', 
+            'C': r'$\vec{F} = q\vec{v} \cdot \vec{B}$',
+            'D': r'$\vec{F} = \frac{q\vec{v}}{B}$'
+        },
+        {
+            'num': 2,
+            'question': r'Năng lượng điện từ trong mạch dao động LC được tính theo công thức:',
+            'A': r'$W = \frac{1}{2}LI^2 + \frac{1}{2}\frac{Q^2}{C}$',
+            'B': r'$W = LI^2 + \frac{Q^2}{C}$',
+            'C': r'$W = \frac{LI^2}{2} - \frac{Q^2}{2C}$', 
+            'D': r'$W = \sqrt{LI^2 + \frac{Q^2}{C}}$'
+        },
+        {
+            'num': 3,
+            'question': 'Cho bảng thông số của các sóng điện từ:',
+            'table': """
+| Loại sóng    | Tần số (Hz)      | Bước sóng (m) |
+|--------------|------------------|---------------|
+| Sóng radio   | $10^6 - 10^9$    | $300 - 0.3$   |
+| Vi ba        | $10^9 - 10^{12}$ | $0.3 - 0.0003$|
+| Hồng ngoại   | $10^{12}-10^{14}$| $0.0003-3×10^{-6}$|
+| Ánh sáng     | $10^{14}-10^{15}$| $3×10^{-6}-3×10^{-7}$|
+
+Sóng có tần số $f = 5 \times 10^{11}$ Hz thuộc loại nào?""",
+            'A': 'Sóng radio',
+            'B': 'Vi ba',
+            'C': 'Hồng ngoại', 
+            'D': 'Ánh sáng'
+        }
     ]
     
-    for question in complex_questions:
-        para = doc.add_paragraph(question)
+    for q in physics_questions:
+        question_text = f"Câu {q['num']}. {q['question']}\n"
+        
+        if 'table' in q:
+            question_text += q['table'] + "\n"
+        
+        question_text += f"A. {q['A']}\n"
+        question_text += f"B. {q['B']}\n"
+        question_text += f"C. {q['C']}\n" 
+        question_text += f"D. {q['D']}"
+        
+        doc.add_paragraph(question_text)
         doc.add_paragraph()
     
-    # Thêm một số câu đúng/sai
-    doc.add_heading('PHẦN ĐÚNG/SAI:', level=2)
+    # Câu tự luận
+    doc.add_heading('PHẦN TỰ LUẬN:', level=2)
     
-    tf_questions = [
-        "Câu 5. Ánh sáng có tính chất sóng và hạt.",
-        "Câu 6. Electron mang điện tích dương.",
-        "Câu 7. Từ trường được tạo ra bởi dòng điện."
-    ]
+    doc.add_paragraph(r"""Câu 4. Một cuộn dây có độ tự cảm $L = 0.1$ H và tụ điện có điện dung $C = 10^{-6}$ F tạo thành mạch dao động LC.
+
+a) Tính chu kỳ dao động riêng của mạch theo công thức $T = 2\pi\sqrt{LC}$.
+
+b) Tại thời điểm $t = 0$, điện tích trên tụ điện là $Q_0 = 10^{-6}$ C. Viết phương trình:
+   - Điện tích: $Q(t) = Q_0 \cos(\omega t + \phi)$  
+   - Dòng điện: $I(t) = -\omega Q_0 \sin(\omega t + \phi)$
+
+c) Tính năng lượng điện từ toàn phần của mạch.""")
     
-    for question in tf_questions:
-        para = doc.add_paragraph(question)
-        doc.add_paragraph()
+    doc.save('physics_exam_formulas.docx')
+    print("✅ Đã tạo file 'physics_exam_formulas.docx'")
+    print("⚡ File Vật lý với công thức LaTeX phức tạp!")
+
+def create_chemistry_exam():
+    """Tạo đề thi Hóa học với công thức và bảng"""
     
-    # Lưu file
-    doc.save('complex_input.docx')
-    print("✅ Đã tạo file 'complex_input.docx'")
-    print("🧪 File này chứa các edge cases để test parser!")
+    doc = Document()
+    
+    title = doc.add_heading('ĐỀ THI HÓA HỌC 12 - HÓA HỮU CƠ', level=1) 
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    doc.add_paragraph()
+    
+    # Câu hỏi với công thức hóa học
+    chem_text = r"""Câu 1. Phản ứng đốt cháy hoàn toàn ethanol trong không khí:
+$C_2H_5OH + 3O_2 \rightarrow 2CO_2 + 3H_2O$
+
+Tính khối lượng $CO_2$ tạo thành khi đốt cháy 4.6g ethanol ($M_{C_2H_5OH} = 46$ g/mol)?
+A. 4.4g
+B. 8.8g  
+C. 6.6g
+D. 2.2g"""
+
+    doc.add_paragraph(chem_text)
+    doc.add_paragraph()
+    
+    # Câu với bảng dữ liệu
+    table_text = """Câu 2. Cho bảng thế điện cực chuẩn:
+
+| Cặp oxi hóa - khử | $E^0$ (V) |
+|-------------------|-----------|
+| $Cu^{2+}/Cu$      | +0.34     |
+| $Zn^{2+}/Zn$      | -0.76     |
+| $Ag^+/Ag$         | +0.80     |
+| $Fe^{2+}/Fe$      | -0.44     |
+
+Kim loại nào có tính khử mạnh nhất?
+A. Cu
+B. Zn
+C. Ag  
+D. Fe"""
+
+    doc.add_paragraph(table_text)
+    doc.add_paragraph()
+    
+    doc.save('chemistry_exam.docx')
+    print("✅ Đã tạo file 'chemistry_exam.docx'")
+    print("🧪 File Hóa học với công thức và bảng!")
 
 if __name__ == "__main__":
-    print("🚀 Tạo file đề thi mẫu...")
+    print("🚀 Tạo các file đề thi mẫu với LaTeX và Markdown...")
     print()
     
-    # Tạo file đơn giản
-    create_sample_exam()
+    # Tạo đề thi toán với LaTeX
+    create_advanced_math_exam()
     print()
     
-    # Tạo file phức tạp  
-    create_complex_sample()
+    # Tạo đề thi vật lý với công thức
+    create_physics_exam_with_formulas()
     print()
     
-    print("✨ Hoàn thành! Có thể upload các file .docx vào ứng dụng để test.")
-    print("📁 Files được tạo:")
-    print("   - example_input.docx (đề thi chuẩn)")
-    print("   - complex_input.docx (test edge cases)")
+    # Tạo đề thi hóa học
+    create_chemistry_exam()
+    print()
+    
+    print("✨ Hoàn thành! Các file đã tạo:")
+    print("   📐 advanced_math_exam.docx (Toán học với LaTeX)")
+    print("   ⚡ physics_exam_formulas.docx (Vật lý với công thức)")
+    print("   🧪 chemistry_exam.docx (Hóa học với bảng)")
+    print()
+    print("🧠 Upload các file này vào ứng dụng để test tính năng LaTeX và Markdown!")
+    print("🔬 Ứng dụng sẽ tự động nhận dạng và chuyển đổi công thức + bảng!")
