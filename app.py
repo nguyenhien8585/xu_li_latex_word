@@ -36,11 +36,15 @@ def create_equation_run(paragraph, latex_expr):
         # \sqrt{x} -> √(x)
         clean_expr = re.sub(r'\\sqrt\{([^}]+)\}', r'√(\1)', clean_expr)
         
-        # x^2 -> x²
-        clean_expr = re.sub(r'([a-zA-Z0-9\[\];,]+)\^([0-9]+)', lambda m: m.group(1) + ''.join('⁰¹²³⁴⁵⁶⁷⁸⁹'[int(d)] for d in m.group(2)), clean_expr)
+        # x^2 -> x² (simplified pattern to avoid regex issues)
+        clean_expr = re.sub(r'([a-zA-Z0-9]+)\^([0-9]+)', 
+                           lambda m: m.group(1) + ''.join('⁰¹²³⁴⁵⁶⁷⁸⁹'[int(d)] for d in m.group(2)), 
+                           clean_expr)
         
         # x_2 -> x₂ (subscript)
-        clean_expr = re.sub(r'([a-zA-Z0-9]+)_([0-9]+)', lambda m: m.group(1) + ''.join('₀₁₂₃₄₅₆₇₈₉'[int(d)] for d in m.group(2)), clean_expr)
+        clean_expr = re.sub(r'([a-zA-Z0-9]+)_([0-9]+)', 
+                           lambda m: m.group(1) + ''.join('₀₁₂₃₄₅₆₇₈₉'[int(d)] for d in m.group(2)), 
+                           clean_expr)
         
         # Interval notation - giữ nguyên [a;b], (a;b), etc.
         # Không cần thay đổi gì với interval notation vì nó đã rõ ràng
@@ -5693,7 +5697,7 @@ Các pattern LaTeX được hỗ trợ:
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 10px;">
-        <p>📚 LaTeX & Word Processor v6.1 | 🔧 Now with Table LaTeX Processing!</p>
+        <p>📚 LaTeX & Word Processor v6.2 | 🔧 Enhanced LaTeX Support & Better Table Processing!</p>
     </div>
     """, unsafe_allow_html=True)
 
