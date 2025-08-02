@@ -14,7 +14,6 @@ Pillow>=10.0.0
 # Utilities
 pandas>=2.0.0
 numpy>=1.24.0
-pandoc
-pdflatex
-convert
+texlive-latex-base 
+imagemagick
 # Note: Fixed mammoth API issue - use result.value instead of result.html
