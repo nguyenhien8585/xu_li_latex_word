@@ -10,3 +10,4 @@ pdf2image
 Pillow
 requests
 pathlib
+markdown
