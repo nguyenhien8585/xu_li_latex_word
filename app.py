@@ -213,12 +213,48 @@ if uploaded_file is not None:
                 with open(input_path, "wb") as f:
                     f.write(uploaded_file.getvalue())
                 
+                # Debug info
+                st.write(f"🔍 Debug: File saved to {input_path}")
+                st.write(f"📏 File size: {os.path.getsize(input_path)} bytes")
+                
                 # Đọc nội dung bằng mammoth
                 st.write("📖 Đang đọc nội dung từ file Word...")
+                
+                # Test mammoth version
+                try:
+                    import mammoth
+                    st.write(f"📦 Mammoth version: {mammoth.__version__}")
+                except:
+                    st.write("⚠️ Cannot get mammoth version")
+                
                 with open(input_path, "rb") as docx_file:
                     result = mammoth.convert_to_html(docx_file)
-                    html_content = result.html
-                    warnings = result.warnings
+                    
+                    # Debug result object
+                    st.write(f"🔍 Result type: {type(result)}")
+                    st.write(f"🔍 Result attributes: {[attr for attr in dir(result) if not attr.startswith('_')]}")
+                    
+                    # Try different attributes
+                    if hasattr(result, 'value'):
+                        html_content = result.value
+                        st.write("✅ Using result.value")
+                    elif hasattr(result, 'html'):
+                        html_content = result.html  
+                        st.write("✅ Using result.html")
+                    else:
+                        st.error("❌ Cannot find HTML content in result object")
+                        st.write("Available attributes:", dir(result))
+                        return
+                    
+                    # Try different message attributes  
+                    warnings = []
+                    if hasattr(result, 'messages'):
+                        warnings = result.messages
+                    elif hasattr(result, 'warnings'):
+                        warnings = result.warnings
+                    
+                    st.write(f"📄 HTML content length: {len(html_content)}")
+                    st.write(f"⚠️ Warnings count: {len(warnings)}")
                 
                 # Phân tích nội dung
                 st.write("🔍 Đang phân tích LaTeX, TikZ và bảng...")
