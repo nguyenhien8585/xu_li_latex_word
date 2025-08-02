@@ -1,7 +1,35 @@
-streamlit
-mammoth
-python-docx
-pypandoc
-Pillow
-pandas numpy
-beautifulsoup4
+# Core Streamlit and web framework
+streamlit>=1.28.0
+streamlit-components-v1>=0.1.0
+
+# Document processing
+mammoth>=1.6.0
+python-docx>=0.8.11
+pypandoc>=1.11
+
+# LaTeX and math processing
+latex2mathml>=2.15.0
+
+# Image processing (for TikZ)
+Pillow>=10.0.0
+
+# File handling
+pathlib
+tempfile
+
+# Utilities
+uuid
+html
+
+# Optional: PDF processing
+# docx2pdf>=0.1.8  # Uncomment if you need PDF conversion
+
+# Development and testing
+pytest>=7.0.0
+black>=23.0.0
+flake8>=6.0.0
+
+# System requirements (install separately):
+# sudo apt install pandoc
+# sudo apt install texlive-latex-base texlive-pictures texlive-latex-extra
+# sudo apt install imagemagick
