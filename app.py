@@ -40,13 +40,14 @@ class FinalSolutionProcessor:
         self.temp_dir = tempfile.mkdtemp()
         
     def tikz2image(self, tikz_code, dpi=300, width=None, height=None):
-        """TikZ compilation function"""
+        """FIXED TikZ compilation function with enhanced error handling"""
         tex_template = f"""
 \\documentclass[tikz,border=10pt]{{standalone}}
-\\usepackage{{amsmath,amssymb}}
+\\usepackage{{amsmath,amssymb,amsfonts}}
 \\usepackage{{tikz,tkz-euclide,tkz-tab,pgfplots}}
+\\usepackage{{xcolor}}
 \\pgfplotsset{{compat=newest}}
-\\usetikzlibrary{{shapes,arrows,positioning,calc,patterns,decorations.pathreplacing,shadows,3d}}
+\\usetikzlibrary{{shapes,arrows,positioning,calc,patterns,decorations.pathreplacing,shadows,3d,intersections}}
 \\begin{{document}}
 {tikz_code}
 \\end{{document}}
@@ -57,38 +58,68 @@ class FinalSolutionProcessor:
                 pdf_path = os.path.join(tmpdir, "tikz_img.pdf")
                 png_path = os.path.join(tmpdir, "tikz_img.png")
                 
+                # Write LaTeX file
                 with open(tex_path, "w", encoding="utf-8") as f:
                     f.write(tex_template)
                 
+                # Compile with pdflatex - enhanced command
                 proc = subprocess.run(
-                    ["pdflatex", "-interaction=nonstopmode", tex_path],
-                    cwd=tmpdir,
+                    ["pdflatex", "-shell-escape", "-interaction=nonstopmode", "-output-directory", tmpdir, tex_path],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    timeout=60
+                    timeout=120,  # Increased timeout
+                    cwd=tmpdir
                 )
                 
-                if proc.returncode != 0 or not os.path.exists(pdf_path):
-                    return None, proc.stderr.decode("utf-8")
-                
-                if PDF2IMAGE_AVAILABLE:
-                    imgs = convert_from_path(pdf_path, dpi=dpi, 
-                                           size=(width, height) if width and height else None)
-                    imgs[0].save(png_path, "PNG")
+                # Check if PDF was created
+                if proc.returncode == 0 and os.path.exists(pdf_path):
+                    st.success(f"✅ TikZ compiled successfully!")
+                    
+                    # Convert PDF to PNG with high quality
+                    if PDF2IMAGE_AVAILABLE:
+                        try:
+                            imgs = convert_from_path(pdf_path, dpi=dpi, 
+                                                   size=(width, height) if width and height else None)
+                            imgs[0].save(png_path, "PNG", optimize=True)
+                            st.info("Used pdf2image for conversion")
+                        except Exception as e:
+                            st.warning(f"pdf2image failed: {e}, using PyMuPDF fallback")
+                            # Fallback to PyMuPDF
+                            doc = fitz.open(pdf_path)
+                            page = doc[0]
+                            mat = fitz.Matrix(dpi/72, dpi/72)
+                            pix = page.get_pixmap(matrix=mat, alpha=False)
+                            pix.save(png_path)
+                            doc.close()
+                    else:
+                        # Use PyMuPDF
+                        doc = fitz.open(pdf_path)
+                        page = doc[0]
+                        mat = fitz.Matrix(dpi/72, dpi/72)
+                        pix = page.get_pixmap(matrix=mat, alpha=False)
+                        pix.save(png_path)
+                        doc.close()
+                        st.info("Used PyMuPDF for conversion")
+                    
+                    # Verify PNG was created
+                    if os.path.exists(png_path) and os.path.getsize(png_path) > 1000:
+                        with open(png_path, "rb") as f:
+                            img_bytes = f.read()
+                        st.success(f"✅ PNG created successfully! Size: {len(img_bytes)} bytes")
+                        return img_bytes, None
+                    else:
+                        return None, "PNG file not created or too small"
                 else:
-                    doc = fitz.open(pdf_path)
-                    page = doc[0]
-                    mat = fitz.Matrix(dpi/72, dpi/72)
-                    pix = page.get_pixmap(matrix=mat)
-                    pix.save(png_path)
-                    doc.close()
+                    # Compilation failed
+                    error_msg = proc.stderr.decode("utf-8") if proc.stderr else "Unknown LaTeX error"
+                    st.error(f"❌ TikZ compilation failed!")
+                    st.code(f"LaTeX Error: {error_msg[:500]}...")
+                    return None, error_msg
                 
-                with open(png_path, "rb") as f:
-                    img_bytes = f.read()
-                
-                return img_bytes, None
-                
+        except subprocess.TimeoutExpired:
+            return None, "TikZ compilation timeout (120s)"
         except Exception as e:
+            st.error(f"❌ TikZ compilation exception: {e}")
             return None, str(e)
     
     def read_document_with_raw_content(self, uploaded_file):
@@ -359,13 +390,22 @@ class FinalSolutionProcessor:
         return tikz_blocks
     
     def create_math_paragraph(self, doc, content, is_display=False):
-        """Create paragraph with math"""
+        """Create paragraph with math - FIXED centering and line breaks"""
+        # ALWAYS create new paragraph for math (both inline and display)
         para = doc.add_paragraph()
         
+        # Set alignment based on type
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Add spacing for display math
         if is_display:
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            para.paragraph_format.space_before = Pt(6)
-            para.paragraph_format.space_after = Pt(6)
+            para.paragraph_format.space_before = Pt(12)
+            para.paragraph_format.space_after = Pt(12)
+            para.paragraph_format.line_spacing = 1.2
+        else:
+            # Even inline math gets some spacing for visibility
+            para.paragraph_format.space_before = Pt(3)
+            para.paragraph_format.space_after = Pt(3)
         
         # Try math2docx first
         if MATH2DOCX_AVAILABLE:
@@ -376,13 +416,18 @@ class FinalSolutionProcessor:
             except Exception as e:
                 st.warning(f"math2docx failed: {e}")
         
-        # Unicode fallback
+        # Enhanced Unicode fallback with better formatting
         unicode_math = self._latex_to_unicode(content)
         run = para.add_run(unicode_math)
         run.font.name = 'Cambria Math'
-        run.font.size = Pt(12)
+        run.font.size = Pt(14) if is_display else Pt(12)
         run.font.color.rgb = RGBColor(0, 51, 102)
+        run.bold = True if is_display else False
+        
+        # Add visual brackets for better distinction
         if is_display:
+            # Add some visual enhancement for display math
+            run.font.size = Pt(16)
             run.bold = True
         
         return True
@@ -553,34 +598,75 @@ class FinalSolutionProcessor:
             
             # Process element
             if element['type'] == 'math':
-                is_display = element['data']['type'] == 'display_math'
-                if self.create_math_paragraph(doc, element['data']['content'], is_display):
+                # FIXED: Always treat math as display (centered, on new line)
+                if self.create_math_paragraph(doc, element['data']['content'], is_display=True):
                     stats['math'] += 1
                     
             elif element['type'] == 'table':
                 table = self.create_professional_table(doc, element['data'])
                 if table:
                     stats['tables'] += 1
-                    doc.add_paragraph()
+                    doc.add_paragraph()  # Add spacing after table
                     
             elif element['type'] == 'tikz':
-                img_bytes, error = self.tikz2image(element['data']['code'])
+                st.write(f"🎨 Processing TikZ block {len([x for x in all_elements[:all_elements.index(element)+1] if x['type'] == 'tikz'])}...")
+                
+                # Enhanced TikZ processing with debug
+                tikz_code = element['data']['code']
+                st.code(f"TikZ Code Preview:\n{tikz_code[:200]}...")
+                
+                img_bytes, error = self.tikz2image(tikz_code, dpi=300)
+                
                 if img_bytes:
                     try:
-                        img_path = os.path.join(self.temp_dir, f'tikz_{stats["tikz"]}.png')
+                        # Save image temporarily
+                        tikz_num = stats.get('tikz', 0) + 1
+                        img_path = os.path.join(self.temp_dir, f'tikz_{tikz_num}.png')
                         with open(img_path, 'wb') as f:
                             f.write(img_bytes)
                         
+                        # Add to document with enhanced formatting
                         p = doc.add_paragraph()
                         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        
+                        # Add some spacing before image
+                        p.paragraph_format.space_before = Pt(12)
+                        p.paragraph_format.space_after = Pt(6)
+                        
                         run = p.add_run()
-                        run.add_picture(img_path, width=Inches(5))
-                        stats['tikz'] += 1
+                        run.add_picture(img_path, width=Inches(6))
+                        
+                        # Add professional caption
+                        caption_p = doc.add_paragraph()
+                        caption_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        caption_p.paragraph_format.space_after = Pt(12)
+                        
+                        caption_run = caption_p.add_run(f"Figure {tikz_num}: TikZ Diagram")
+                        caption_run.italic = True
+                        caption_run.font.size = Pt(10)
+                        caption_run.font.color.rgb = RGBColor(100, 100, 100)
+                        caption_run.font.name = 'Times New Roman'
+                        
+                        stats['tikz'] = tikz_num
+                        st.success(f"✅ TikZ {tikz_num} successfully added to document!")
+                        
                     except Exception as e:
-                        st.warning(f"TikZ insert error: {e}")
+                        st.error(f"❌ Error inserting TikZ image: {e}")
+                        # Add error message to document
+                        p = doc.add_paragraph()
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        run = p.add_run(f"[TikZ Image Insert Error: {str(e)}]")
+                        run.italic = True
+                        run.font.color.rgb = RGBColor(200, 0, 0)
                 else:
-                    p = doc.add_paragraph(f"[TikZ Error: {error[:50]}...]")
+                    st.error(f"❌ TikZ compilation failed: {error}")
+                    # Add error message to document
+                    p = doc.add_paragraph()
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    error_text = f"[TikZ Compilation Failed: {error[:100]}...]"
+                    run = p.add_run(error_text)
+                    run.italic = True
+                    run.font.color.rgb = RGBColor(200, 0, 0)
             
             current_pos = element['end']
         
