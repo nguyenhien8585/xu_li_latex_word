@@ -1,193 +1,290 @@
-# 🚀 Hướng dẫn Deploy nhanh trên GitHub và Streamlit Cloud
+# 🚀 Hướng dẫn Deploy Word Converter
 
-## 📋 Checklist trước khi deploy
+## 📋 Tổng quan các cách deploy
 
-- [ ] Đã có tài khoản GitHub
-- [ ] Đã có tài khoản Streamlit Cloud (miễn phí)
-- [ ] Các file đã sẵn sàng: `app.py`, `requirements.txt`, `README.md`
+| Phương pháp | Độ khó | Chi phí | Thời gian setup | URL public |
+|-------------|--------|---------|-----------------|------------|
+| Streamlit Cloud | ⭐ | Miễn phí | 5 phút | ✅ |
+| GitHub Codespaces | ⭐⭐ | Miễn phí* | 2 phút | ❌ |
+| Local | ⭐⭐⭐ | Miễn phí | 5 phút | ❌ |
+| Heroku | ⭐⭐⭐⭐ | Có phí | 15 phút | ✅ |
 
-## 🎯 Bước 1: Tạo GitHub Repository
+*GitHub Codespaces: 60 giờ/tháng miễn phí
 
-### 1.1. Tạo repository mới
+## 🎯 Cách 1: Streamlit Cloud (Khuyến nghị)
+
+### Bước 1: Chuẩn bị repository
 ```bash
-# Trên GitHub.com
-1. Click "New repository"
-2. Đặt tên: "word-document-processor" 
-3. Chọn "Public"
-4. Check "Add a README file"
-5. Click "Create repository"
+# Tạo repository mới trên GitHub
+# Upload tất cả files: app.py, requirements.txt, README.md, .streamlit/config.toml
 ```
 
-### 1.2. Upload files
-```bash
-# Cách 1: Qua GitHub Web Interface
-1. Click "uploading an existing file"
-2. Drag & drop hoặc chọn files:
-   - app.py
-   - requirements.txt
-   - README.md
-   - .streamlit/config.toml (tùy chọn)
-3. Commit files
+### Bước 2: Deploy trên Streamlit Cloud
+1. Truy cập: https://share.streamlit.io
+2. Đăng nhập bằng GitHub
+3. Nhấn "New app"
+4. Chọn repository của bạn
+5. Main file path: `app.py`
+6. Nhấn "Deploy!"
 
-# Cách 2: Qua Git command line
-git clone https://github.com/your-username/word-document-processor.git
-cd word-document-processor
-# Copy các files vào folder
+### Bước 3: Kiểm tra
+- App sẽ có URL dạng: `https://yourapp.streamlit.app`
+- Chia sẻ URL này cho người khác sử dụng
+
+### ✅ Ưu điểm:
+- Hoàn toàn miễn phí
+- Auto-deploy khi push code mới
+- SSL certificate tự động
+- Không cần server management
+
+## 🔧 Cách 2: GitHub Codespaces
+
+### Bước 1: Tạo Codespace
+1. Vào repository trên GitHub
+2. Nhấn "Code" → "Codespaces" → "Create codespace on main"
+3. Đợi environment setup (2-3 phút)
+
+### Bước 2: Chạy app
+```bash
+# Trong terminal của Codespace
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+### Bước 3: Truy cập
+- Codespace sẽ tự động mở browser với app
+- URL dạng: `https://abc123-8501.app.github.dev`
+
+### ✅ Ưu điểm:
+- Setup nhanh
+- Môi trường development đầy đủ
+- Tích hợp với GitHub
+
+### ⚠️ Hạn chế:
+- Chỉ chạy khi Codespace active
+- 60 giờ miễn phí/tháng
+
+## 💻 Cách 3: Local Development
+
+### Bước 1: Clone repository
+```bash
+git clone https://github.com/yourusername/word-converter.git
+cd word-converter
+```
+
+### Bước 2: Setup environment
+```bash
+# Tạo virtual environment (optional nhưng khuyến nghị)
+python -m venv venv
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Bước 3: Chạy app
+```bash
+streamlit run app.py
+```
+
+### Bước 4: Truy cập
+- Mở browser: http://localhost:8501
+
+## 🌐 Cách 4: Heroku (Advanced)
+
+### Bước 1: Chuẩn bị files
+Tạo thêm các files:
+
+**Procfile:**
+```
+web: sh setup.sh && streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
+```
+
+**setup.sh:**
+```bash
+mkdir -p ~/.streamlit/
+echo "\
+[server]\n\
+headless = true\n\
+port = $PORT\n\
+enableCORS = false\n\
+\n\
+" > ~/.streamlit/config.toml
+```
+
+**runtime.txt:**
+```
+python-3.9.18
+```
+
+### Bước 2: Deploy lên Heroku
+```bash
+# Install Heroku CLI
+# Login
+heroku login
+
+# Tạo app
+heroku create your-word-converter
+
+# Deploy
 git add .
-git commit -m "Initial commit: Word processor app"
-git push origin main
+git commit -m "Deploy to Heroku"
+git push heroku main
 ```
 
-## 🌐 Bước 2: Deploy trên Streamlit Cloud
+## 📊 So sánh chi tiết
 
-### 2.1. Truy cập Streamlit Cloud
-1. Mở [share.streamlit.io](https://share.streamlit.io)
-2. Click "Sign in with GitHub"
-3. Authorize Streamlit access
+### Performance:
+- **Streamlit Cloud**: Tốt, server được optimize
+- **Codespaces**: Rất tốt, container riêng
+- **Local**: Tùy thuộc máy local
+- **Heroku**: Tốt, nhưng có giới hạn memory
 
-### 2.2. Tạo app mới
-1. Click "New app"
-2. **Repository**: Chọn `your-username/word-document-processor`
-3. **Branch**: `main`
-4. **Main file path**: `app.py`
-5. **App URL** (tùy chọn): `word-processor` hoặc để trống
-6. Click "Deploy!"
+### Scalability:
+- **Streamlit Cloud**: Auto-scale, handle nhiều user
+- **Codespaces**: 1 user/session
+- **Local**: 1 user/session
+- **Heroku**: Scale được nhưng có phí
 
-### 2.3. Chờ deploy
-- Quá trình mất 2-5 phút
-- Streamlit sẽ cài đặt dependencies từ `requirements.txt`
-- Nếu có lỗi, kiểm tra logs và sửa
+### Security:
+- **Streamlit Cloud**: HTTPS mặc định
+- **Codespaces**: HTTPS, private by default
+- **Local**: HTTP, chỉ local access
+- **Heroku**: HTTPS mặc định
 
-## ✅ Bước 3: Kiểm tra và sử dụng
+## 🔐 Bảo mật và Cấu hình
 
-### 3.1. Kiểm tra app
-URL của bạn sẽ có dạng:
-```
-https://word-processor-[random].streamlit.app
-hoặc
-https://your-username-word-document-proces-[random].streamlit.app
-```
-
-### 3.2. Test các tính năng
-- [ ] Upload file Word (.docx)
-- [ ] Xử lý công thức LaTeX
-- [ ] Xử lý bảng Markdown  
-- [ ] Download file đã xử lý
-
-## 🔧 Bước 4: Tùy chỉnh và cập nhật
-
-### 4.1. Cập nhật code
+### Environment Variables (nếu cần):
 ```bash
-# Local changes
-git add .
-git commit -m "Update: [mô tả thay đổi]"
-git push origin main
+# Trong Streamlit Cloud
+# Settings → Advanced → Secrets
+# Thêm vào secrets.toml:
 
-# Streamlit sẽ tự động redeploy sau ~1 phút
+[database]
+host = "your-host"
+password = "your-password"
 ```
 
-### 4.2. Quản lý app
-- Truy cập [share.streamlit.io](https://share.streamlit.io)
-- Vào "My apps" để xem, edit, delete apps
-- Xem logs để debug
-
-## 🎨 Bước 5: Tùy chỉnh giao diện (tùy chọn)
-
-### 5.1. Custom theme
-Tạo file `.streamlit/config.toml`:
+### File size limits:
 ```toml
-[theme]
-primaryColor = "#FF6B6B"          # Màu chính
-backgroundColor = "#FFFFFF"        # Màu nền
-secondaryBackgroundColor = "#F0F2F6"  # Màu nền phụ
-textColor = "#262730"             # Màu chữ
+# .streamlit/config.toml
+[server]
+maxUploadSize = 10  # MB
 ```
 
-### 5.2. Custom domain (Pro plan)
-- Upgrade lên Streamlit Cloud Pro
-- Thêm custom domain trong settings
+### CORS configuration:
+```toml
+[server]
+enableCORS = false
+enableXsrfProtection = false
+```
 
-## 🚨 Troubleshooting
+## 🐛 Troubleshooting Deploy
 
 ### Lỗi thường gặp:
 
-#### 1. ModuleNotFoundError
-**Lỗi**: `ModuleNotFoundError: No module named 'docx'`
-**Giải pháp**: Kiểm tra `requirements.txt` có `python-docx`
-
-#### 2. File upload lỗi
-**Lỗi**: File quá lớn
-**Giải pháp**: Thêm vào `.streamlit/config.toml`:
-```toml
-[server]
-maxUploadSize = 200
+**1. "ModuleNotFoundError"**
+```bash
+# Kiểm tra requirements.txt có đầy đủ không
+pip freeze > requirements.txt
 ```
 
-#### 3. Memory error
-**Lỗi**: Out of memory
-**Giải pháp**: Optimize code hoặc upgrade plan
-
-#### 4. Deploy fail
-**Lỗi**: Build failed
-**Giải pháp**: 
-- Kiểm tra syntax lỗi trong `app.py`
-- Xem logs chi tiết trên Streamlit Cloud
-- Đảm bảo `requirements.txt` đúng format
-
-## 📊 Monitoring và Analytics
-
-### Xem usage stats:
-1. Streamlit Cloud dashboard
-2. GitHub traffic (Settings > Insights)
-3. Custom analytics (Google Analytics)
-
-### Performance tips:
-- Cache expensive operations với `@st.cache_data`
-- Optimize file size
-- Minimize dependencies
-
-## 🔐 Bảo mật
-
-### Khuyến nghị:
-- Không hardcode API keys
-- Sử dụng Streamlit secrets cho sensitive data
-- Regular security updates
-
-### Streamlit Secrets:
-1. Vào app settings trên Streamlit Cloud
-2. Thêm secrets trong format TOML
-3. Access qua `st.secrets["key"]`
-
-## 📱 Chia sẻ app
-
-### URL để chia sẻ:
-```
-https://your-app-name.streamlit.app
+**2. "Port binding error"**
+```bash
+# Đảm bảo app listen trên port từ environment
+port = int(os.environ.get("PORT", 8501))
 ```
 
-### Embed trong website:
-```html
-<iframe src="https://your-app-name.streamlit.app" 
-        width="100%" height="600px">
-</iframe>
+**3. "File upload error"**
+```bash
+# Kiểm tra file size limit
+# Tăng maxUploadSize trong config.toml
 ```
 
-### QR Code:
-Tạo QR code trỏ đến URL app để chia sẻ dễ dàng
+**4. "Memory error"**
+```bash
+# Optimize code để dùng ít memory hơn
+# Hoặc upgrade plan (Heroku)
+```
+
+## 📈 Monitoring và Analytics
+
+### Streamlit Cloud:
+- Built-in analytics trong dashboard
+- View count, user metrics
+- Error tracking
+
+### Custom analytics:
+```python
+# Thêm vào app.py
+import streamlit as st
+
+# Track usage
+if 'visit_count' not in st.session_state:
+    st.session_state.visit_count = 0
+st.session_state.visit_count += 1
+```
+
+## 🔄 Auto-deployment
+
+### GitHub Actions (cho advanced users):
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Streamlit Cloud
+on:
+  push:
+    branches: [ main ]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+    - name: Run tests
+      run: python -m pytest tests/
+```
+
+## 💡 Tips và Best Practices
+
+1. **Code Organization:**
+   - Tách logic xử lý ra module riêng
+   - Sử dụng caching cho heavy operations
+   - Error handling đầy đủ
+
+2. **User Experience:**
+   - Progress bars cho operations lâu
+   - Clear error messages
+   - Input validation
+
+3. **Performance:**
+   - Sử dụng st.cache_data cho functions nặng
+   - Optimize file processing
+   - Lazy loading
+
+4. **Security:**
+   - Validate file uploads
+   - Sanitize user inputs
+   - Set appropriate file size limits
+
+## 📞 Support
+
+Nếu gặp vấn đề trong quá trình deploy:
+
+1. Kiểm tra logs trong platform dashboard
+2. Verify tất cả dependencies trong requirements.txt
+3. Test local trước khi deploy
+4. Tạo issue trên GitHub repository
 
 ---
 
-## 🎉 Hoàn thành!
-
-Chúc mừng! Bạn đã successfully deploy ứng dụng Word Document Processor.
-
-**Next steps:**
-- Share URL với users
-- Collect feedback
-- Iterate và improve
-- Monitor usage và performance
-
-**Need help?** 
-- GitHub Issues: [Link to your repo issues]
-- Streamlit Community: [community.streamlit.io](https://community.streamlit.io)
-- Documentation: [docs.streamlit.io](https://docs.streamlit.io)
+**Lưu ý:** Hướng dẫn này được update thường xuyên. Check lại repository để có version mới nhất.
