@@ -1,42 +1,7 @@
-# Core web framework
-streamlit>=1.28.0
-
-# Document processing
-mammoth>=1.6.0
-python-docx>=0.8.11
-pypandoc>=1.11
-
-# LaTeX and Math processing
-latex2mathml>=3.76.0
-
-# Image processing (for TikZ conversion)
-Pillow>=10.0.0
-
-# File handling and utilities
-pathlib2>=2.3.7
-tempfile-utility>=0.1.0
-
-# Optional: PDF processing
-docx2pdf>=0.1.8
-
-# Data processing
-pandas>=1.5.0
-numpy>=1.24.0
-
-# System utilities
-subprocess32>=3.5.4; python_version < '3.0'
-
-# Error handling and logging
-loguru>=0.7.0
-
-# Optional: Enhanced text processing
-regex>=2023.0.0
-beautifulsoup4>=4.12.0
-
-# Optional: Archive handling for batch processing
-zipfile38>=0.0.3; python_version < '3.8'
-
-# Development and testing (optional)
-pytest>=7.0.0
-black>=23.0.0
-flake8>=6.0.0
+streamlit
+mammoth
+python-docx
+pypandoc
+Pillow
+pandas numpy
+beautifulsoup4
