@@ -1,8 +1,5 @@
 streamlit>=1.28.0
 python-docx>=0.8.11
-regex>=2023.10.3
-pywin32>=306; sys_platform == "win32"
-sympy>=1.12
-latex2mathml>=3.76.0
-lxml>=4.9.3
-beautifulsoup4>=4.12.2
+pandas>=1.5.0
+lxml>=4.9.0
+openpyxl>=3.1.0
