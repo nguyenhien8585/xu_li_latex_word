@@ -1,34 +1,17 @@
-# Core Web App
-streamlit>=1.28.0
-
-# Word document processing
-python-docx>=0.8.11
-mammoth>=1.5.1
-docxcompose>=1.4.0
-
-# LaTeX and Math processing
-latex2mathml>=3.76.0
-sympy>=1.12
-
-# Markdown parsing (for tables)
-markdown>=3.5.1
-mistune>=3.0.2
-
-# PDF & Image processing (for TikZ to PNG)
-pdf2image>=3.1.0
-PyMuPDF>=1.23.0
-Pillow>=10.0.0
-
-# System utilities
-requests>=2.31.0
-pathlib>=1.0.1
-
-# Platform-specific
-# subprocess32 is for older Linux, use subprocess in Python 3+
-# Optional: only needed if subprocess32 required
+streamlit
+python-docx
+mammoth
+docxcompose
+latex2mathml
+sympy
+markdown
+mistune
+pdf2image
+PyMuPDF
+Pillow
+requests
+pathlib
 subprocess32; sys_platform == "linux"
-
-# Development and formatting (optional)
-pytest>=7.4.0
-black>=23.0.0
-flake8>=6.0.0
+pytest
+black
+flake8
