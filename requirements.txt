@@ -12,3 +12,4 @@ requests
 pathlib
 markdown
 pymupdf
+math2docx
