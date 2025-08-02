@@ -1,18 +1,16 @@
 import streamlit as st
 import mammoth
-import pypandoc
+import re
 import os
 import tempfile
-import shutil
-import re
 from pathlib import Path
 import base64
-from tikz_utils import process_tikz_code
-from convert_utils import process_latex_formulas, process_markdown_tables
+from io import StringIO
+import pandas as pd
 
 # Cấu hình trang
 st.set_page_config(
-    page_title="LaTeX to Word Converter",
+    page_title="LaTeX to Word Converter - Demo",
     page_icon="📝",
     layout="wide"
 )
@@ -35,11 +33,19 @@ st.markdown("""
         border-left: 4px solid #667eea;
         margin: 1rem 0;
     }
-    .step-box {
-        background: #e8f4fd;
+    .warning-box {
+        background: #fff3cd;
         padding: 1rem;
         border-radius: 8px;
-        margin: 0.5rem 0;
+        border-left: 4px solid #ffc107;
+        margin: 1rem 0;
+    }
+    .demo-box {
+        background: #d1ecf1;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #17a2b8;
+        margin: 1rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -47,8 +53,26 @@ st.markdown("""
 # Header chính
 st.markdown("""
 <div class="main-header">
-    <h1>🧮 LaTeX to Word Converter</h1>
-    <p>Chuyển đổi file Word chứa LaTeX, TikZ và Markdown thành Word hoàn chỉnh</p>
+    <h1>🧮 LaTeX to Word Converter - Demo Version</h1>
+    <p>Phân tích và hiển thị nội dung LaTeX, TikZ từ file Word</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Warning về limitation
+st.markdown("""
+<div class="warning-box">
+    <h4>⚠️ Lưu ý về phiên bản Demo</h4>
+    <p>Streamlit Cloud không hỗ trợ system dependencies như <code>pandoc</code>, <code>pdflatex</code>, <code>imagemagick</code>. 
+    Phiên bản này chỉ có thể:</p>
+    <ul>
+        <li>✅ Đọc và phân tích file Word</li>
+        <li>✅ Phát hiện công thức LaTeX và TikZ</li>
+        <li>✅ Hiển thị thống kê chi tiết</li>
+        <li>✅ Xuất file HTML</li>
+        <li>❌ Không thể compile TikZ thành hình ảnh</li>
+        <li>❌ Không thể tạo file Word với Equation thật</li>
+    </ul>
+    <p><strong>Để sử dụng đầy đủ tính năng, hãy chạy local hoặc deploy lên VPS.</strong></p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -56,22 +80,24 @@ st.markdown("""
 with st.sidebar:
     st.header("📋 Hướng dẫn sử dụng")
     st.markdown("""
-    **Ứng dụng này giúp bạn:**
-    - ✅ Chuyển công thức LaTeX `$...$` thành Equation thật
-    - ✅ Chuyển TikZ thành hình ảnh PNG  
-    - ✅ Chuyển bảng Markdown thành bảng Word
+    **Phiên bản Demo này giúp bạn:**
+    - ✅ Upload và phân tích file Word
+    - ✅ Phát hiện LaTeX và TikZ
+    - ✅ Xem thống kê chi tiết
+    - ✅ Xuất HTML để xem trước
     
-    **Các bước thực hiện:**
-    1. Tải lên file Word (.docx)
-    2. Xem trước nội dung được xử lý
-    3. Tải về file Word đã chuyển đổi
+    **Để có đầy đủ tính năng:**
+    1. Clone repo về local
+    2. Cài đặt system dependencies
+    3. Chạy `streamlit run app.py`
     """)
     
-    st.header("🔧 Yêu cầu hệ thống")
+    st.header("🚀 Deploy đầy đủ")
     st.markdown("""
-    - Pandoc
-    - TeX Live (pdflatex)
-    - ImageMagick
+    **Các option deploy:**
+    - 🖥️ **Local**: Đầy đủ tính năng
+    - ☁️ **VPS/Cloud**: Cần cài dependencies
+    - 🐳 **Docker**: Tự động setup môi trường
     """)
 
 # Main content
@@ -82,188 +108,324 @@ with col1:
     uploaded_file = st.file_uploader(
         "Chọn file Word (.docx) chứa LaTeX, TikZ, bảng",
         type=['docx'],
-        help="File nên chứa công thức LaTeX ($...$), TikZ, hoặc bảng Markdown"
+        help="File sẽ được phân tích để tìm LaTeX, TikZ và bảng"
     )
     
     if uploaded_file is not None:
         st.success(f"✅ Đã tải lên: {uploaded_file.name}")
-        
-        # Hiển thị thông tin file
         st.info(f"📊 Kích thước: {len(uploaded_file.getvalue())} bytes")
 
 with col2:
-    st.header("⚙️ Tùy chọn xử lý")
+    st.header("⚙️ Tùy chọn phân tích")
     
-    process_latex = st.checkbox("🧮 Xử lý công thức LaTeX", value=True)
-    process_tikz = st.checkbox("🖼️ Xử lý TikZ diagrams", value=True)  
-    process_tables = st.checkbox("📊 Xử lý bảng Markdown", value=True)
-    
-    output_format = st.selectbox(
-        "📄 Định dạng đầu ra",
-        ["docx", "pdf", "html"],
-        help="Chọn định dạng file muốn xuất ra"
-    )
+    show_html = st.checkbox("📄 Hiển thị HTML", value=True)
+    show_latex = st.checkbox("🧮 Highlight LaTeX", value=True)  
+    show_tikz = st.checkbox("🖼️ Highlight TikZ", value=True)
+    show_tables = st.checkbox("📊 Highlight Tables", value=True)
 
-# Nút xử lý
+def extract_latex_formulas(content):
+    """Tìm và trích xuất công thức LaTeX"""
+    patterns = [
+        r'\$+([^$]+)\$+',  # $...$ và $$...$$
+        r'\\begin\{equation\}(.*?)\\end\{equation\}',
+        r'\\begin\{align\}(.*?)\\end\{align\}',
+        r'\\\[(.*?)\\\]'
+    ]
+    
+    formulas = []
+    for pattern in patterns:
+        matches = re.finditer(pattern, content, re.DOTALL)
+        for match in matches:
+            formulas.append({
+                'content': match.group(1).strip() if match.groups() else match.group(0),
+                'type': 'inline' if '$' in pattern else 'display',
+                'start': match.start(),
+                'end': match.end(),
+                'full': match.group(0)
+            })
+    
+    return formulas
+
+def extract_tikz_diagrams(content):
+    """Tìm và trích xuất TikZ diagrams"""
+    pattern = r'\\begin\{tikzpicture\}(.*?)\\end\{tikzpicture\}'
+    diagrams = []
+    
+    matches = re.finditer(pattern, content, re.DOTALL)
+    for i, match in enumerate(matches):
+        diagrams.append({
+            'id': i + 1,
+            'content': match.group(1).strip(),
+            'start': match.start(),
+            'end': match.end(),
+            'full': match.group(0)
+        })
+    
+    return diagrams
+
+def extract_tables(content):
+    """Tìm và trích xuất bảng"""
+    # HTML tables
+    html_tables = re.findall(r'<table.*?</table>', content, re.DOTALL | re.IGNORECASE)
+    
+    # Markdown-style tables 
+    markdown_tables = re.findall(r'\|.*?\|(?:\r?\n\|.*?\|)*', content, re.MULTILINE)
+    
+    return {
+        'html': html_tables,
+        'markdown': markdown_tables
+    }
+
+def highlight_content(content, formulas, tikz_diagrams, tables, show_latex, show_tikz, show_tables):
+    """Highlight các thành phần trong nội dung"""
+    highlighted = content
+    
+    if show_latex:
+        for formula in formulas:
+            original = formula['full']
+            highlighted_formula = f'<mark style="background-color: #ffeb3b; padding: 2px;">{original}</mark>'
+            highlighted = highlighted.replace(original, highlighted_formula)
+    
+    if show_tikz:
+        for diagram in tikz_diagrams:
+            original = diagram['full']
+            highlighted_diagram = f'<mark style="background-color: #4caf50; padding: 2px; color: white;">{original}</mark>'
+            highlighted = highlighted.replace(original, highlighted_diagram)
+    
+    if show_tables:
+        for table in tables['html']:
+            highlighted_table = f'<div style="border: 2px solid #2196f3; padding: 5px; margin: 5px;">{table}</div>'
+            highlighted = highlighted.replace(table, highlighted_table)
+    
+    return highlighted
+
+# Xử lý file được upload
 if uploaded_file is not None:
-    if st.button("🚀 Bắt đầu xử lý", type="primary"):
+    if st.button("🔍 Phân tích file", type="primary"):
         
-        with st.spinner("⏳ Đang xử lý file..."):
+        with st.spinner("⏳ Đang phân tích file..."):
             try:
                 # Tạo thư mục tạm thời
                 temp_dir = tempfile.mkdtemp()
                 input_path = os.path.join(temp_dir, "input.docx")
                 
-                # Lưu file tải lên
+                # Lưu file
                 with open(input_path, "wb") as f:
                     f.write(uploaded_file.getvalue())
                 
-                # Bước 1: Đọc nội dung từ Word
+                # Đọc nội dung bằng mammoth
                 st.write("📖 Đang đọc nội dung từ file Word...")
                 with open(input_path, "rb") as docx_file:
                     result = mammoth.convert_to_html(docx_file)
                     html_content = result.html
+                    warnings = result.warnings
                 
-                # Bước 2: Xử lý nội dung
-                processed_content = html_content
+                # Phân tích nội dung
+                st.write("🔍 Đang phân tích LaTeX, TikZ và bảng...")
+                formulas = extract_latex_formulas(html_content)
+                tikz_diagrams = extract_tikz_diagrams(html_content)
+                tables = extract_tables(html_content)
                 
-                if process_latex:
-                    st.write("🧮 Đang xử lý công thức LaTeX...")
-                    processed_content = process_latex_formulas(processed_content)
+                st.success("✅ Phân tích hoàn tất!")
                 
-                if process_tikz:
-                    st.write("🖼️ Đang xử lý TikZ diagrams...")
-                    processed_content = process_tikz_code(processed_content, temp_dir)
+                # Hiển thị thống kê
+                st.header("📊 Thống kê phân tích")
                 
-                if process_tables:
-                    st.write("📊 Đang xử lý bảng...")
-                    processed_content = process_markdown_tables(processed_content)
+                col1, col2, col3, col4 = st.columns(4)
                 
-                # Bước 3: Chuyển đổi về Word
-                st.write(f"📄 Đang chuyển đổi sang {output_format.upper()}...")
+                with col1:
+                    st.metric("🧮 Công thức LaTeX", len(formulas))
                 
-                # Lưu HTML tạm thời
-                html_path = os.path.join(temp_dir, "processed.html")
-                with open(html_path, "w", encoding="utf-8") as f:
-                    f.write(processed_content)
+                with col2:
+                    st.metric("🖼️ TikZ Diagrams", len(tikz_diagrams))
                 
-                # Chuyển đổi bằng pandoc
-                output_path = os.path.join(temp_dir, f"output.{output_format}")
+                with col3:
+                    st.metric("📊 Bảng HTML", len(tables['html']))
                 
-                if output_format == "docx":
-                    pypandoc.convert_file(
-                        html_path, 
-                        'docx', 
-                        outputfile=output_path,
-                        extra_args=['--standalone']
-                    )
-                elif output_format == "pdf":
-                    pypandoc.convert_file(
-                        html_path,
-                        'pdf',
-                        outputfile=output_path,
-                        extra_args=['--pdf-engine=pdflatex']
-                    )
-                else:  # html
-                    shutil.copy(html_path, output_path)
+                with col4:
+                    st.metric("📋 Bảng Markdown", len(tables['markdown']))
                 
-                st.success("✅ Xử lý hoàn tất!")
-                
-                # Hiển thị kết quả
-                st.header("📋 Xem trước kết quả")
-                
-                # Tab để hiển thị nội dung
-                tab1, tab2 = st.tabs(["🔍 Nội dung gốc", "✨ Nội dung đã xử lý"])
-                
-                with tab1:
-                    st.code(html_content[:1000] + "..." if len(html_content) > 1000 else html_content, language="html")
-                
-                with tab2:
-                    if output_format == "html":
-                        st.components.v1.html(processed_content, height=400, scrolling=True)
-                    else:
-                        st.code(processed_content[:1000] + "..." if len(processed_content) > 1000 else processed_content, language="html")
-                
-                # Nút tải về
-                with open(output_path, "rb") as file:
-                    file_data = file.read()
+                # Hiển thị chi tiết
+                if formulas or tikz_diagrams or tables['html'] or tables['markdown']:
                     
+                    # Tab hiển thị chi tiết
+                    tab1, tab2, tab3, tab4 = st.tabs(["🧮 LaTeX Formulas", "🖼️ TikZ Diagrams", "📊 Tables", "📄 Full Content"])
+                    
+                    with tab1:
+                        if formulas:
+                            st.subheader(f"Tìm thấy {len(formulas)} công thức LaTeX:")
+                            for i, formula in enumerate(formulas, 1):
+                                with st.expander(f"Công thức {i} ({formula['type']})"):
+                                    st.code(formula['content'], language='latex')
+                                    st.write(f"**Vị trí:** {formula['start']}-{formula['end']}")
+                        else:
+                            st.info("Không tìm thấy công thức LaTeX nào.")
+                    
+                    with tab2:
+                        if tikz_diagrams:
+                            st.subheader(f"Tìm thấy {len(tikz_diagrams)} TikZ diagrams:")
+                            for diagram in tikz_diagrams:
+                                with st.expander(f"TikZ Diagram {diagram['id']}"):
+                                    st.code(diagram['content'], language='latex')
+                                    st.info("💡 Để tạo hình ảnh từ TikZ, cần chạy ứng dụng local với pdflatex.")
+                        else:
+                            st.info("Không tìm thấy TikZ diagram nào.")
+                    
+                    with tab3:
+                        if tables['html'] or tables['markdown']:
+                            if tables['html']:
+                                st.subheader(f"Tìm thấy {len(tables['html'])} bảng HTML:")
+                                for i, table in enumerate(tables['html'], 1):
+                                    with st.expander(f"Bảng HTML {i}"):
+                                        st.markdown(table, unsafe_allow_html=True)
+                            
+                            if tables['markdown']:
+                                st.subheader(f"Tìm thấy {len(tables['markdown'])} bảng Markdown:")
+                                for i, table in enumerate(tables['markdown'], 1):
+                                    with st.expander(f"Bảng Markdown {i}"):
+                                        st.code(table, language='markdown')
+                        else:
+                            st.info("Không tìm thấy bảng nào.")
+                    
+                    with tab4:
+                        st.subheader("Nội dung đầy đủ với highlighting:")
+                        
+                        # Highlight content
+                        highlighted_content = highlight_content(
+                            html_content, formulas, tikz_diagrams, tables, 
+                            show_latex, show_tikz, show_tables
+                        )
+                        
+                        if show_html:
+                            st.components.v1.html(highlighted_content, height=600, scrolling=True)
+                        else:
+                            st.code(highlighted_content[:2000] + "..." if len(highlighted_content) > 2000 else highlighted_content, language='html')
+                
+                # Xuất file HTML
+                st.header("💾 Xuất kết quả")
+                
+                # Tạo HTML file
+                html_with_highlights = highlight_content(
+                    html_content, formulas, tikz_diagrams, tables, True, True, True
+                )
+                
+                html_template = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>LaTeX Analysis Result</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        .stats {{ background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
+        .highlight-latex {{ background-color: #ffeb3b; padding: 2px; }}
+        .highlight-tikz {{ background-color: #4caf50; padding: 2px; color: white; }}
+    </style>
+</head>
+<body>
+    <h1>📊 Kết quả phân tích LaTeX</h1>
+    <div class="stats">
+        <p><strong>File:</strong> {uploaded_file.name}</p>
+        <p><strong>LaTeX Formulas:</strong> {len(formulas)}</p>
+        <p><strong>TikZ Diagrams:</strong> {len(tikz_diagrams)}</p>
+        <p><strong>HTML Tables:</strong> {len(tables['html'])}</p>
+        <p><strong>Markdown Tables:</strong> {len(tables['markdown'])}</p>
+    </div>
+    <hr>
+    <h2>📄 Nội dung với highlighting</h2>
+    {html_with_highlights}
+</body>
+</html>
+                """
+                
                 st.download_button(
-                    label=f"💾 Tải về file {output_format.upper()}",
-                    data=file_data,
-                    file_name=f"converted_document.{output_format}",
-                    mime=f"application/{output_format}",
+                    label="💾 Tải file HTML phân tích",
+                    data=html_template,
+                    file_name=f"analysis_{uploaded_file.name.split('.')[0]}.html",
+                    mime="text/html",
                     type="primary"
                 )
                 
-                # Thống kê xử lý
-                st.header("📊 Thống kê xử lý")
+                # Thông tin warnings
+                if warnings:
+                    with st.expander("⚠️ Warnings từ mammoth"):
+                        for warning in warnings:
+                            st.warning(warning)
                 
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    latex_count = len(re.findall(r'\$+[^$]+\$+', html_content))
-                    st.metric("🧮 Công thức LaTeX", latex_count)
-                
-                with col2:
-                    tikz_count = len(re.findall(r'\\begin\{tikzpicture\}.*?\\end\{tikzpicture\}', html_content, re.DOTALL))
-                    st.metric("🖼️ TikZ diagrams", tikz_count)
-                
-                with col3:
-                    table_count = len(re.findall(r'\|.*?\|', html_content))
-                    st.metric("📊 Bảng phát hiện", table_count)
-                
-                # Dọn dẹp file tạm thời
-                shutil.rmtree(temp_dir)
+                # Dọn dẹp
+                os.remove(input_path)
+                os.rmdir(temp_dir)
                 
             except Exception as e:
                 st.error(f"❌ Lỗi khi xử lý: {str(e)}")
-                st.write("💡 Hãy đảm bảo:")
-                st.write("- File Word hợp lệ")
-                st.write("- Đã cài đặt pandoc và các công cụ cần thiết")
-                st.write("- Cú pháp LaTeX và TikZ đúng")
+                st.write("💡 Hãy đảm bảo file Word hợp lệ và không bị corrupt.")
+
+# Demo instructions
+if uploaded_file is None:
+    st.header("📝 Hướng dẫn sử dụng Demo")
+    
+    st.markdown("""
+    <div class="demo-box">
+    <h4>🔍 Demo này có thể làm gì?</h4>
+    <ol>
+        <li>📁 <strong>Upload file Word</strong> chứa LaTeX, TikZ hoặc bảng</li>
+        <li>🔍 <strong>Phân tích tự động</strong> và đếm số lượng mỗi loại</li>
+        <li>👁️ <strong>Xem trước chi tiết</strong> từng công thức và diagram</li>
+        <li>🎨 <strong>Highlight</strong> các thành phần trong HTML</li>
+        <li>💾 <strong>Xuất file HTML</strong> để lưu trữ hoặc chia sẻ</li>
+    </ol>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.header("📝 Ví dụ định dạng được hỗ trợ")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        <div class="feature-box">
+        <h4>🧮 Công thức LaTeX</h4>
+        <code>$x^2 + y^2 = z^2$</code><br>
+        <code>$$\\int_0^1 x^2 dx = \\frac{1}{3}$$</code><br>
+        <code>\\begin{equation}E = mc^2\\end{equation}</code>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="feature-box">
+        <h4>📊 Bảng HTML/Markdown</h4>
+        <code>&lt;table&gt;&lt;tr&gt;&lt;td&gt;Data&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</code><br>
+        <code>| A | B |<br>|---|---|<br>| 1 | 2 |</code>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div class="feature-box">
+        <h4>🖼️ TikZ Diagram</h4>
+        <code>\\begin{tikzpicture}<br>
+        \\draw (0,0) circle (1cm);<br>
+        \\draw (0,0) -- (1,0);<br>
+        \\end{tikzpicture}</code>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="feature-box">
+        <h4>🚀 Deploy đầy đủ</h4>
+        <p>Để có đầy đủ tính năng (compile TikZ, tạo Equation Word):</p>
+        <code>git clone &lt;repo&gt;<br>
+        pip install -r requirements.txt<br>
+        # Cài pandoc, texlive, imagemagick<br>
+        streamlit run app.py</code>
+        </div>
+        """, unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666;">
-    <p>🚀 Phát triển bởi AI Assistant | 📧 Hỗ trợ: support@example.com</p>
-    <p>💡 Ứng dụng này sử dụng Streamlit, Pandoc, và LaTeX</p>
+    <p>🚀 Demo Version | 💻 <a href="#" target="_blank">GitHub Repo</a> | 📧 Support</p>
+    <p>💡 Để có đầy đủ tính năng, hãy chạy local với đầy đủ dependencies</p>
 </div>
 """, unsafe_allow_html=True)
-
-# Hiển thị ví dụ nếu chưa tải file
-if uploaded_file is None:
-    st.header("📝 Ví dụ định dạng đầu vào")
-    
-    st.markdown("""
-    <div class="feature-box">
-    <h4>🧮 Công thức LaTeX</h4>
-    <code>Phương trình bậc hai: $ax^2 + bx + c = 0$</code><br>
-    <code>Tích phân: $\\int_0^1 x^2 dx = \\frac{1}{3}$</code>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div class="feature-box">
-    <h4>🖼️ TikZ Diagram</h4>
-    <code>
-    \\begin{tikzpicture}<br>
-    \\draw (0,0) circle (1cm);<br>
-    \\draw (0,0) -- (1,0);<br>
-    \\end{tikzpicture}
-    </code>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div class="feature-box">
-    <h4>📊 Bảng Markdown</h4>
-    <code>
-    | Tên | Điểm | Xếp loại |<br>
-    |-----|------|----------|<br>
-    | An  | 9.5  | Giỏi     |<br>
-    | Bình| 8.0  | Khá      |
-    </code>
-    </div>
-    """, unsafe_allow_html=True)
