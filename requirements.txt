@@ -1,9 +1,12 @@
-# Core Streamlit and web framework
+# Full requirements for local/Docker deployment with all features
+
+# Core Streamlit
 streamlit>=1.28.0
 
-# Document processing  
+# Document processing
 mammoth>=1.6.0
 python-docx>=0.8.11
+pypandoc>=1.11
 
 # LaTeX and math processing
 latex2mathml>=3.76.0
@@ -11,9 +14,23 @@ latex2mathml>=3.76.0
 # Image processing
 Pillow>=10.0.0
 
-# Utilities
+# Data handling
 pandas>=2.0.0
 numpy>=1.24.0
 
-# Note: pandoc, texlive, imagemagick are system dependencies
-# They cannot be installed via pip on Streamlit Cloud
+# File utilities (built-in modules, listed for reference)
+# tempfile, pathlib, os, shutil, re, uuid, html, base64
+
+# Optional: Additional document formats
+# docx2pdf>=0.1.8  # Uncomment if needed
+
+# Development dependencies (optional)
+# pytest>=7.0.0
+# black>=23.0.0  
+# flake8>=6.0.0
+
+# Note: System dependencies are installed via Dockerfile:
+# - pandoc (document conversion)
+# - texlive-latex-base, texlive-latex-extra (LaTeX compilation)
+# - texlive-pictures (TikZ support) 
+# - imagemagick (image conversion)
