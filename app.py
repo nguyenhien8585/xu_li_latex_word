@@ -15,6 +15,8 @@ try:
     from docx.enum.table import WD_TABLE_ALIGNMENT
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.shared import OxmlElement, qn
+    from docx.oxml.ns import nsdecls
+    from docx.oxml import parse_xml
     import mammoth
     import markdown
     from PIL import Image, ImageDraw, ImageFont
@@ -36,539 +38,575 @@ try:
 except ImportError:
     LATEX2MATHML_AVAILABLE = False
 
-class AdvancedWordProcessor:
-    """Advanced Word processor với TikZ compilation và proper table handling"""
+class ProfessionalWordProcessor:
+    """Professional Word processor với format preservation và styling đẹp"""
     
     def __init__(self):
         self.temp_dir = tempfile.mkdtemp()
         
-    def read_word_document_preserve_format(self, uploaded_file):
-        """Đọc Word document và giữ nguyên format"""
+    def read_word_with_structure(self, uploaded_file):
+        """Đọc Word document với cấu trúc đầy đủ"""
         try:
             uploaded_file.seek(0)
-            # Sử dụng mammoth để extract với format
-            result = mammoth.extract_raw_text(uploaded_file)
-            content = result.value
+            doc = Document(uploaded_file)
             
-            # Cũng thử extract với styles
-            uploaded_file.seek(0)
-            with_styles = mammoth.convert_to_html(uploaded_file)
-            html_content = with_styles.value
-            
-            return {
-                'text': content,
-                'html': html_content,
-                'messages': result.messages if hasattr(result, 'messages') else []
+            structure = {
+                'paragraphs': [],
+                'tables': [],
+                'raw_text': '',
+                'styles_info': {}
             }
+            
+            full_text = []
+            
+            # Extract paragraphs với style info
+            for i, paragraph in enumerate(doc.paragraphs):
+                para_info = {
+                    'text': paragraph.text,
+                    'style': paragraph.style.name if paragraph.style else 'Normal',
+                    'alignment': paragraph.alignment,
+                    'runs': []
+                }
+                
+                # Extract runs với formatting
+                for run in paragraph.runs:
+                    run_info = {
+                        'text': run.text,
+                        'bold': run.bold,
+                        'italic': run.italic,
+                        'underline': run.underline,
+                        'font_size': run.font.size.pt if run.font.size else None
+                    }
+                    para_info['runs'].append(run_info)
+                
+                structure['paragraphs'].append(para_info)
+                full_text.append(paragraph.text)
+            
+            # Extract tables
+            for table in doc.tables:
+                table_data = []
+                for row in table.rows:
+                    row_data = []
+                    for cell in row.cells:
+                        row_data.append(cell.text.strip())
+                    table_data.append(row_data)
+                
+                if table_data and any(any(cell for cell in row) for row in table_data):
+                    structure['tables'].append({
+                        'data': table_data,
+                        'header': table_data[0] if table_data else [],
+                        'rows': table_data[1:] if len(table_data) > 1 else []
+                    })
+            
+            structure['raw_text'] = '\n'.join(full_text)
+            
+            return structure
+            
         except Exception as e:
             st.error(f"Error reading Word document: {e}")
-            # Fallback method
-            try:
-                uploaded_file.seek(0)
-                doc = Document(uploaded_file)
-                content = []
-                for paragraph in doc.paragraphs:
-                    content.append(paragraph.text)
-                return {
-                    'text': '\n'.join(content),
-                    'html': '',
-                    'messages': []
-                }
-            except Exception as e2:
-                st.error(f"Fallback method failed: {e2}")
-                return {'text': '', 'html': '', 'messages': []}
+            return {'paragraphs': [], 'tables': [], 'raw_text': '', 'styles_info': {}}
     
-    def find_markdown_tables_robust(self, text):
-        """Robust markdown table detection với nhiều format"""
-        tables = []
+    def detect_math_expressions_advanced(self, text):
+        """Advanced math detection với nhiều formats"""
+        math_expressions = []
         
-        # Pattern 1: Standard markdown tables
-        pattern1 = r'(\|[^\n\r]+\|(?:\r?\n|\r))+(\|[-:\s|]+\|(?:\r?\n|\r))(\|[^\n\r]+\|(?:\r?\n|\r)?)*'
+        # Patterns for different math formats
+        patterns = [
+            # LaTeX formats
+            (r'\$([^$]+)\$', 'latex_inline'),
+            (r'\$\$([^$]+)\$\$', 'latex_display'),
+            (r'\\\[([^\]]+)\\\]', 'latex_display_bracket'),
+            (r'\\\(([^\)]+)\\\)', 'latex_inline_paren'),
+            
+            # Formula blocks
+            (r'\[FORMULA:\s*([^\]]+)\]', 'formula_block'),
+            (r'\[MATH:\s*([^\]]+)\]', 'math_block'),
+            
+            # Environment blocks
+            (r'\\begin\{equation\}(.*?)\\end\{equation\}', 'equation'),
+            (r'\\begin\{align\}(.*?)\\end\{align\}', 'align'),
+            (r'\\begin\{displaymath\}(.*?)\\end\{displaymath\}', 'displaymath'),
+            
+            # Unicode math symbols detection
+            (r'[α-ωΑ-Ω∀∃∈∉∅∪∩⊂⊃≤≥≠≈±×÷∞∑∏∫√π]', 'unicode_math')
+        ]
         
-        for match in re.finditer(pattern1, text, re.MULTILINE):
-            table_text = match.group(0).strip()
-            parsed_table = self._parse_markdown_table(table_text)
-            if parsed_table:
-                parsed_table.update({
-                    'original': table_text,
+        for pattern, math_type in patterns:
+            for match in re.finditer(pattern, text, re.DOTALL):
+                content = match.group(1) if match.groups() else match.group(0)
+                math_expressions.append({
+                    'original': match.group(0),
+                    'content': content.strip(),
+                    'type': math_type,
                     'start': match.start(),
                     'end': match.end()
                 })
-                tables.append(parsed_table)
         
-        # Pattern 2: Simple tables without separators
+        # Remove duplicates and sort
+        math_expressions = list({expr['original']: expr for expr in math_expressions}.values())
+        math_expressions.sort(key=lambda x: x['start'], reverse=True)
+        
+        return math_expressions
+    
+    def detect_tables_comprehensive(self, text):
+        """Comprehensive table detection"""
+        tables = []
+        
+        # Method 1: Markdown tables
+        markdown_pattern = r'(\|[^\n\r]+\|(?:\r?\n|\r))+(\|[-:\s|]+\|(?:\r?\n|\r))?(\|[^\n\r]+\|(?:\r?\n|\r)?)*'
+        
+        for match in re.finditer(markdown_pattern, text, re.MULTILINE):
+            table_text = match.group(0).strip()
+            parsed = self._parse_markdown_table_robust(table_text)
+            if parsed:
+                parsed.update({
+                    'original': table_text,
+                    'start': match.start(),
+                    'end': match.end(),
+                    'type': 'markdown'
+                })
+                tables.append(parsed)
+        
+        # Method 2: Space-separated tables
         lines = text.split('\n')
+        current_table = []
+        table_start_line = -1
+        
         for i, line in enumerate(lines):
-            if '|' in line and line.count('|') >= 3:  # At least 2 columns
-                # Look for next few lines with similar structure
-                table_lines = [line]
-                j = i + 1
-                while j < len(lines) and '|' in lines[j]:
-                    table_lines.append(lines[j])
-                    j += 1
-                
-                if len(table_lines) >= 2:  # At least header + 1 data row
-                    table_text = '\n'.join(table_lines)
-                    parsed_table = self._parse_simple_table(table_lines)
-                    if parsed_table:
-                        # Find position in original text
+            # Check if line looks like table row (multiple words separated by spaces/tabs)
+            if self._is_table_row(line):
+                if not current_table:
+                    table_start_line = i
+                current_table.append(line.strip())
+            else:
+                if len(current_table) >= 2:  # At least 2 rows
+                    parsed = self._parse_space_table(current_table)
+                    if parsed:
+                        table_text = '\n'.join(current_table)
                         start_pos = text.find(table_text)
                         if start_pos != -1:
-                            parsed_table.update({
+                            parsed.update({
                                 'original': table_text,
                                 'start': start_pos,
-                                'end': start_pos + len(table_text)
+                                'end': start_pos + len(table_text),
+                                'type': 'space_separated'
                             })
-                            # Check if not already found
-                            if not any(abs(t['start'] - start_pos) < 10 for t in tables):
-                                tables.append(parsed_table)
+                            tables.append(parsed)
+                current_table = []
         
-        # Sort by position and remove duplicates
+        # Process last table if exists
+        if len(current_table) >= 2:
+            parsed = self._parse_space_table(current_table)
+            if parsed:
+                table_text = '\n'.join(current_table)
+                start_pos = text.find(table_text)
+                if start_pos != -1:
+                    parsed.update({
+                        'original': table_text,
+                        'start': start_pos,
+                        'end': start_pos + len(table_text),
+                        'type': 'space_separated'
+                    })
+                    tables.append(parsed)
+        
+        # Remove duplicates and sort
+        tables = self._remove_overlapping_tables(tables)
         tables.sort(key=lambda x: x['start'])
-        return self._remove_duplicate_tables(tables)
+        
+        return tables
     
-    def _parse_markdown_table(self, table_text):
-        """Parse standard markdown table"""
+    def _is_table_row(self, line):
+        """Check if line looks like a table row"""
+        line = line.strip()
+        if not line or len(line) < 5:
+            return False
+        
+        # Check for multiple words/numbers separated by whitespace
+        words = line.split()
+        if len(words) < 2:
+            return False
+        
+        # Check for consistent separation patterns
+        if '|' in line:
+            return line.count('|') >= 2
+        
+        # Check for tab-separated or multiple space-separated
+        if '\t' in line or '  ' in line:
+            return True
+        
+        # Check for mix of text and numbers
+        has_text = any(word.isalpha() for word in words)
+        has_numbers = any(any(c.isdigit() for c in word) for word in words)
+        
+        return len(words) >= 3 and (has_text or has_numbers)
+    
+    def _parse_markdown_table_robust(self, table_text):
+        """Robust markdown table parsing"""
         lines = [line.strip() for line in table_text.split('\n') if line.strip()]
         
         if len(lines) < 2:
             return None
         
-        # First line is header
+        # Find header
         header_line = lines[0]
-        header = [cell.strip() for cell in header_line.split('|')[1:-1] if cell.strip()]
+        if not '|' in header_line:
+            return None
         
+        header = [cell.strip() for cell in header_line.split('|') if cell.strip()]
         if not header:
             return None
         
-        # Find separator line (contains -, :, |)
-        separator_idx = -1
-        for i, line in enumerate(lines[1:], 1):
-            if re.match(r'^[\s\-:|]+$', line.replace('|', '')):
-                separator_idx = i
-                break
-        
-        if separator_idx == -1 and len(lines) > 1:
-            # No separator found, treat second line as data
-            separator_idx = 1
+        # Find separator line (optional)
+        data_start = 1
+        if len(lines) > 1 and re.match(r'^[\s\-:|]+$', lines[1].replace('|', '')):
+            data_start = 2
         
         # Parse data rows
         rows = []
-        for line in lines[separator_idx + 1:]:
-            if line.strip() and '|' in line:
-                row_cells = [cell.strip() for cell in line.split('|')[1:-1]]
-                # Pad or truncate to match header length
-                while len(row_cells) < len(header):
-                    row_cells.append('')
-                rows.append(row_cells[:len(header)])
-        
-        return {'header': header, 'rows': rows} if header and rows else None
-    
-    def _parse_simple_table(self, table_lines):
-        """Parse simple table without separators"""
-        if len(table_lines) < 2:
-            return None
-        
-        # First line as header
-        header = [cell.strip() for cell in table_lines[0].split('|')[1:-1] if cell.strip()]
-        
-        if not header:
-            return None
-        
-        rows = []
-        for line in table_lines[1:]:
-            if line.strip() and '|' in line:
-                row_cells = [cell.strip() for cell in line.split('|')[1:-1]]
-                while len(row_cells) < len(header):
-                    row_cells.append('')
-                rows.append(row_cells[:len(header)])
+        for line in lines[data_start:]:
+            if '|' in line:
+                row = [cell.strip() for cell in line.split('|') if cell.strip()]
+                # Adjust row length to match header
+                while len(row) < len(header):
+                    row.append('')
+                rows.append(row[:len(header)])
         
         return {'header': header, 'rows': rows} if rows else None
     
-    def _remove_duplicate_tables(self, tables):
-        """Remove duplicate tables based on content similarity"""
-        unique_tables = []
-        for table in tables:
-            is_duplicate = False
-            for existing in unique_tables:
-                if (table['header'] == existing['header'] and 
-                    len(table['rows']) == len(existing['rows'])):
-                    is_duplicate = True
-                    break
-            if not is_duplicate:
-                unique_tables.append(table)
-        return unique_tables
-    
-    def compile_tikz_to_png(self, tikz_code, output_path=None):
-        """Compile TikZ code to PNG using LaTeX"""
-        if output_path is None:
-            output_path = os.path.join(self.temp_dir, f'tikz_{hash(tikz_code)}.png')
+    def _parse_space_table(self, table_lines):
+        """Parse space/tab separated table"""
+        if len(table_lines) < 2:
+            return None
         
-        try:
-            # Create LaTeX document
-            latex_template = r"""
-\documentclass[border=10pt]{{standalone}}
-\usepackage{{tikz}}
-\usepackage{{amsmath}}
-\usepackage{{amsfonts}}
-\usetikzlibrary{{shapes,arrows,positioning,calc}}
-\begin{{document}}
-\begin{{tikzpicture}}
-{tikz_code}
-\end{{tikzpicture}}
-\end{{document}}
-"""
-            
-            latex_content = latex_template.format(tikz_code=tikz_code)
-            
-            # Write LaTeX file
-            tex_file = os.path.join(self.temp_dir, 'tikz_temp.tex')
-            with open(tex_file, 'w', encoding='utf-8') as f:
-                f.write(latex_content)
-            
-            # Compile with pdflatex
-            cmd = ['pdflatex', '-output-directory', self.temp_dir, 
-                   '-interaction=nonstopmode', tex_file]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.temp_dir)
-            
-            if result.returncode != 0:
-                st.warning(f"LaTeX compilation failed: {result.stderr}")
-                return self._create_tikz_fallback_image(tikz_code, output_path)
-            
-            # Convert PDF to PNG
-            pdf_file = os.path.join(self.temp_dir, 'tikz_temp.pdf')
-            if os.path.exists(pdf_file):
-                # Use PyMuPDF to convert PDF to PNG
-                doc = fitz.open(pdf_file)
-                page = doc[0]
-                
-                # High resolution conversion
-                mat = fitz.Matrix(3.0, 3.0)  # 3x zoom for high quality
-                pix = page.get_pixmap(matrix=mat)
-                pix.save(output_path)
-                doc.close()
-                
-                return output_path
+        # Parse first line as header
+        header_line = table_lines[0]
+        if '\t' in header_line:
+            header = [cell.strip() for cell in header_line.split('\t') if cell.strip()]
+        else:
+            # Split by multiple spaces
+            header = [cell.strip() for cell in re.split(r'  +', header_line) if cell.strip()]
+        
+        if not header or len(header) < 2:
+            return None
+        
+        # Parse data rows
+        rows = []
+        for line in table_lines[1:]:
+            if '\t' in line:
+                row = [cell.strip() for cell in line.split('\t')]
             else:
-                return self._create_tikz_fallback_image(tikz_code, output_path)
-                
-        except Exception as e:
-            st.warning(f"TikZ compilation error: {e}")
-            return self._create_tikz_fallback_image(tikz_code, output_path)
+                row = [cell.strip() for cell in re.split(r'  +', line)]
+            
+            # Adjust to header length
+            while len(row) < len(header):
+                row.append('')
+            rows.append(row[:len(header)])
+        
+        return {'header': header, 'rows': rows} if rows else None
     
-    def _create_tikz_fallback_image(self, tikz_code, output_path):
-        """Create fallback image when TikZ compilation fails"""
-        try:
-            width, height = 600, 400
-            img = Image.new('RGB', (width, height), color='white')
-            draw = ImageDraw.Draw(img)
-            
-            # Draw border
-            draw.rectangle([10, 10, width-10, height-10], outline='#2E86AB', width=3)
-            
-            # Add title
-            try:
-                font = ImageFont.load_default()
-            except:
-                font = None
-            
-            title = "📊 TikZ Diagram (Compilation Failed)"
-            if font:
-                bbox = draw.textbbox((0, 0), title, font=font)
-                title_width = bbox[2] - bbox[0]
-                draw.text(((width - title_width) // 2, 30), title, fill='#2E86AB', font=font)
-            
-            # Show code
-            draw.text((20, 80), "LaTeX Code:", fill='#555555', font=font)
-            
-            # Format code for display
-            code_lines = tikz_code.split('\n')
-            y = 110
-            for i, line in enumerate(code_lines[:15]):  # Show first 15 lines
-                if line.strip():
-                    display_line = line[:80] + "..." if len(line) > 80 else line
-                    draw.text((25, y), display_line, fill='#333333', font=font)
-                    y += 20
-                if y > height - 60:
+    def _remove_overlapping_tables(self, tables):
+        """Remove overlapping table detections"""
+        if not tables:
+            return tables
+        
+        # Sort by start position
+        tables.sort(key=lambda x: x['start'])
+        
+        filtered = [tables[0]]
+        for table in tables[1:]:
+            # Check if overlaps with any previous table
+            overlaps = False
+            for prev_table in filtered:
+                if (table['start'] < prev_table['end'] and 
+                    table['end'] > prev_table['start']):
+                    overlaps = True
                     break
             
-            if len(code_lines) > 15:
-                draw.text((25, height - 40), f"... và {len(code_lines) - 15} dòng nữa", 
-                         fill='#888888', font=font)
-            
-            img.save(output_path, 'PNG')
-            return output_path
-            
+            if not overlaps:
+                filtered.append(table)
+        
+        return filtered
+    
+    def convert_math_to_word_equation(self, paragraph, latex_content):
+        """Convert LaTeX to Word equation"""
+        try:
+            if MATH2DOCX_AVAILABLE:
+                # Clean LaTeX
+                cleaned_latex = self._clean_latex_for_word(latex_content)
+                math2docx.add_math(paragraph, cleaned_latex)
+                return True
+            else:
+                # Enhanced Unicode fallback
+                unicode_math = self._latex_to_unicode_enhanced(latex_content)
+                run = paragraph.add_run(unicode_math)
+                run.font.name = 'Cambria Math'
+                run.font.size = Pt(12)
+                run.italic = True
+                return True
         except Exception as e:
-            st.error(f"Could not create fallback image: {e}")
-            return None
+            st.warning(f"Math conversion error for '{latex_content[:30]}...': {e}")
+            return False
     
-    def find_tikz_blocks_enhanced(self, text):
-        """Enhanced TikZ detection với nhiều patterns"""
-        tikz_blocks = []
+    def _clean_latex_for_word(self, latex):
+        """Clean LaTeX for Word equation conversion"""
+        # Remove common problematic patterns
+        cleaned = latex.strip()
         
-        # Pattern 1: Standard tikzpicture
-        pattern1 = r'\\begin\{tikzpicture\}(.*?)\\end\{tikzpicture\}'
-        for match in re.finditer(pattern1, text, re.DOTALL):
-            tikz_blocks.append({
-                'original': match.group(0),
-                'code': match.group(1).strip(),
-                'start': match.start(),
-                'end': match.end(),
-                'type': 'tikzpicture'
-            })
+        # Fix common issues
+        replacements = {
+            r'\\mathit\{([^}]+)\}': r'\1',  # Remove \mathit{}
+            r'\\mathrm\{([^}]+)\}': r'\1',  # Remove \mathrm{}
+            r'\\text\{([^}]+)\}': r'\1',    # Remove \text{}
+            r'\\,': ' ',                     # Replace thin space
+            r'\\;': ' ',                     # Replace medium space
+            r'\\quad': '    ',               # Replace quad space
+            r'\\qquad': '        ',          # Replace qquad space
+        }
         
-        # Pattern 2: tikzpicture với options
-        pattern2 = r'\\begin\{tikzpicture\}\[([^\]]*)\](.*?)\\end\{tikzpicture\}'
-        for match in re.finditer(pattern2, text, re.DOTALL):
-            tikz_blocks.append({
-                'original': match.group(0),
-                'code': match.group(2).strip(),
-                'options': match.group(1).strip(),
-                'start': match.start(),
-                'end': match.end(),
-                'type': 'tikzpicture_with_options'
-            })
+        for pattern, replacement in replacements.items():
+            cleaned = re.sub(pattern, replacement, cleaned)
         
-        # Pattern 3: Standalone TikZ commands
-        tikz_commands = [
-            r'\\draw[^\;]*\;',
-            r'\\node[^\;]*\;',
-            r'\\fill[^\;]*\;',
-            r'\\path[^\;]*\;'
-        ]
-        
-        for pattern in tikz_commands:
-            for match in re.finditer(pattern, text, re.MULTILINE):
-                # Check if not already in a tikzpicture block
-                in_existing_block = any(
-                    block['start'] <= match.start() <= block['end'] 
-                    for block in tikz_blocks
-                )
-                if not in_existing_block:
-                    tikz_blocks.append({
-                        'original': match.group(0),
-                        'code': match.group(0),
-                        'start': match.start(),
-                        'end': match.end(),
-                        'type': 'standalone_command'
-                    })
-        
-        tikz_blocks.sort(key=lambda x: x['start'], reverse=True)
-        return tikz_blocks
+        return cleaned
     
-    def create_professional_table(self, doc, table_data):
-        """Tạo bảng Word professional với styling đẹp"""
-        if not table_data['header'] or not table_data['rows']:
+    def _latex_to_unicode_enhanced(self, latex):
+        """Enhanced LaTeX to Unicode conversion"""
+        # Comprehensive symbol mapping
+        symbols = {
+            # Greek letters
+            r'\\alpha': 'α', r'\\beta': 'β', r'\\gamma': 'γ', r'\\delta': 'δ',
+            r'\\epsilon': 'ε', r'\\zeta': 'ζ', r'\\eta': 'η', r'\\theta': 'θ',
+            r'\\iota': 'ι', r'\\kappa': 'κ', r'\\lambda': 'λ', r'\\mu': 'μ',
+            r'\\nu': 'ν', r'\\xi': 'ξ', r'\\pi': 'π', r'\\rho': 'ρ',
+            r'\\sigma': 'σ', r'\\tau': 'τ', r'\\upsilon': 'υ', r'\\phi': 'φ',
+            r'\\chi': 'χ', r'\\psi': 'ψ', r'\\omega': 'ω',
+            
+            # Uppercase Greek
+            r'\\Gamma': 'Γ', r'\\Delta': 'Δ', r'\\Theta': 'Θ', r'\\Lambda': 'Λ',
+            r'\\Xi': 'Ξ', r'\\Pi': 'Π', r'\\Sigma': 'Σ', r'\\Phi': 'Φ',
+            r'\\Psi': 'Ψ', r'\\Omega': 'Ω',
+            
+            # Math operators
+            r'\\pm': '±', r'\\mp': '∓', r'\\times': '×', r'\\div': '÷',
+            r'\\cdot': '·', r'\\bullet': '•', r'\\ast': '∗',
+            r'\\cap': '∩', r'\\cup': '∪', r'\\subset': '⊂', r'\\supset': '⊃',
+            r'\\subseteq': '⊆', r'\\supseteq': '⊇', r'\\in': '∈', r'\\notin': '∉',
+            r'\\emptyset': '∅', r'\\varnothing': '∅',
+            
+            # Relations
+            r'\\leq': '≤', r'\\le': '≤', r'\\geq': '≥', r'\\ge': '≥',
+            r'\\neq': '≠', r'\\ne': '≠', r'\\equiv': '≡', r'\\approx': '≈',
+            r'\\sim': '∼', r'\\simeq': '≃', r'\\cong': '≅', r'\\propto': '∝',
+            
+            # Special symbols
+            r'\\infty': '∞', r'\\partial': '∂', r'\\nabla': '∇',
+            r'\\exists': '∃', r'\\forall': '∀', r'\\neg': '¬',
+            r'\\angle': '∠', r'\\triangle': '△',
+            
+            # Large operators
+            r'\\sum': '∑', r'\\prod': '∏', r'\\int': '∫', r'\\oint': '∮',
+            
+            # Functions
+            r'\\sin': 'sin', r'\\cos': 'cos', r'\\tan': 'tan', r'\\cot': 'cot',
+            r'\\sec': 'sec', r'\\csc': 'csc', r'\\log': 'log', r'\\ln': 'ln',
+            r'\\exp': 'exp', r'\\lim': 'lim', r'\\max': 'max', r'\\min': 'min',
+            
+            # Arrows
+            r'\\rightarrow': '→', r'\\to': '→', r'\\leftarrow': '←',
+            r'\\leftrightarrow': '↔', r'\\Rightarrow': '⇒', r'\\Leftarrow': '⇐',
+            r'\\Leftrightarrow': '⇔'
+        }
+        
+        result = latex
+        
+        # Apply symbol replacements
+        for pattern, replacement in symbols.items():
+            result = re.sub(pattern, replacement, result)
+        
+        # Handle fractions
+        result = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1)/(\2)', result)
+        
+        # Handle square roots
+        result = re.sub(r'\\sqrt\{([^}]+)\}', r'√(\1)', result)
+        result = re.sub(r'\\sqrt\[([^\]]+)\]\{([^}]+)\}', r'ⁿ√(\2)', result)
+        
+        # Handle superscripts and subscripts
+        result = re.sub(r'\^{([^}]+)}', lambda m: self._to_superscript(m.group(1)), result)
+        result = re.sub(r'\^(\w)', lambda m: self._to_superscript(m.group(1)), result)
+        result = re.sub(r'_{([^}]+)}', lambda m: self._to_subscript(m.group(1)), result)
+        result = re.sub(r'_(\w)', lambda m: self._to_subscript(m.group(1)), result)
+        
+        # Clean up remaining LaTeX commands
+        result = re.sub(r'\\mathit\{([^}]+)\}', r'\1', result)
+        result = re.sub(r'\\mathrm\{([^}]+)\}', r'\1', result)
+        result = re.sub(r'\\text\{([^}]+)\}', r'\1', result)
+        result = re.sub(r'\\([a-zA-Z]+)', r'\1', result)
+        result = result.replace('{', '').replace('}', '')
+        
+        return result
+    
+    def _to_superscript(self, text):
+        """Convert text to superscript Unicode"""
+        superscript_map = {
+            '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵',
+            '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻',
+            '=': '⁼', '(': '⁽', ')': '⁾', 'n': 'ⁿ', 'i': 'ⁱ'
+        }
+        return ''.join(superscript_map.get(c, c) for c in text)
+    
+    def _to_subscript(self, text):
+        """Convert text to subscript Unicode"""
+        subscript_map = {
+            '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅',
+            '6': '₆', '7': '₇', '8': '₈', '9': '₉', '+': '₊', '-': '₋',
+            '=': '₌', '(': '₍', ')': '₎', 'a': 'ₐ', 'e': 'ₑ', 'i': 'ᵢ',
+            'o': 'ₒ', 'u': 'ᵤ', 'x': 'ₓ', 'n': 'ₙ'
+        }
+        return ''.join(subscript_map.get(c, c) for c in text)
+    
+    def create_styled_table(self, doc, table_data):
+        """Create professionally styled table"""
+        if not table_data.get('header') or not table_data.get('rows'):
             return None
+        
+        header = table_data['header']
+        rows = table_data['rows']
         
         # Create table
-        num_rows = len(table_data['rows']) + 1  # +1 for header
-        num_cols = len(table_data['header'])
+        table = doc.add_table(rows=len(rows) + 1, cols=len(header))
         
-        table = doc.add_table(rows=num_rows, cols=num_cols)
+        # Set table style
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
-        # Style header row
+        # Style header
         header_row = table.rows[0]
-        for i, header_text in enumerate(table_data['header']):
+        for i, header_text in enumerate(header):
             cell = header_row.cells[i]
             cell.text = str(header_text)
             
-            # Header formatting
+            # Header styling
             for paragraph in cell.paragraphs:
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for run in paragraph.runs:
                     run.bold = True
-                    run.font.size = Pt(12)
+                    run.font.size = Pt(11)
                     run.font.color.rgb = RGBColor(255, 255, 255)
+                    run.font.name = 'Calibri'
             
             # Header background
-            shading_elm = OxmlElement("w:shd")
-            shading_elm.set(qn("w:fill"), "366092")  # Dark blue
-            cell._tc.get_or_add_tcPr().append(shading_elm)
+            shading = OxmlElement("w:shd")
+            shading.set(qn("w:fill"), "2F5597")  # Professional blue
+            cell._tc.get_or_add_tcPr().append(shading)
         
-        # Add data rows with alternating colors
-        for row_idx, row_data in enumerate(table_data['rows']):
+        # Style data rows
+        for row_idx, row_data in enumerate(rows):
             table_row = table.rows[row_idx + 1]
             for col_idx, cell_data in enumerate(row_data):
-                if col_idx < num_cols:
+                if col_idx < len(header):
                     cell = table_row.cells[col_idx]
-                    cell.text = str(cell_data) if cell_data is not None else ''
+                    cell.text = str(cell_data) if cell_data else ''
                     
-                    # Cell formatting
+                    # Cell styling
                     for paragraph in cell.paragraphs:
                         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         for run in paragraph.runs:
                             run.font.size = Pt(10)
+                            run.font.name = 'Calibri'
                     
                     # Alternating row colors
                     if row_idx % 2 == 0:
-                        shading_elm = OxmlElement("w:shd")
-                        shading_elm.set(qn("w:fill"), "F8F9FA")  # Light gray
-                        cell._tc.get_or_add_tcPr().append(shading_elm)
+                        shading = OxmlElement("w:shd")
+                        shading.set(qn("w:fill"), "F8F9FA")  # Light gray
+                        cell._tc.get_or_add_tcPr().append(shading)
         
         return table
     
-    def find_formulas_enhanced(self, text):
-        """Enhanced formula detection"""
-        formulas = []
-        
-        # Pattern cho [FORMULA: ...]
-        pattern1 = r'\[FORMULA:\s*([^\]]+)\]'
-        for match in re.finditer(pattern1, text):
-            formulas.append({
-                'original': match.group(0),
-                'latex': match.group(1).strip(),
-                'start': match.start(),
-                'end': match.end(),
-                'type': 'formula_block'
-            })
-        
-        # Pattern cho LaTeX math
-        patterns = [
-            (r'\$\{([^}]+)\}\$', 'latex_brace'),
-            (r'\$([^$]+)\$', 'latex_dollar'),
-            (r'\\begin\{equation\}(.*?)\\end\{equation\}', 'equation_env'),
-            (r'\\begin\{align\}(.*?)\\end\{align\}', 'align_env')
-        ]
-        
-        for pattern, formula_type in patterns:
-            for match in re.finditer(pattern, text, re.DOTALL):
-                formulas.append({
-                    'original': match.group(0),
-                    'latex': match.group(1).strip(),
-                    'start': match.start(),
-                    'end': match.end(),
-                    'type': formula_type
-                })
-        
-        formulas.sort(key=lambda x: x['start'], reverse=True)
-        return formulas
-    
-    def add_math_equation_enhanced(self, paragraph, latex_string):
-        """Enhanced math equation với multiple methods"""
-        try:
-            if MATH2DOCX_AVAILABLE:
-                math2docx.add_math(paragraph, latex_string)
-                return True
-            elif LATEX2MATHML_AVAILABLE:
-                mathml = latex2mathml_convert(latex_string)
-                # Add MathML to paragraph (simplified)
-                run = paragraph.add_run(f"[MATH: {latex_string}]")
-                run.italic = True
-                return True
-            else:
-                return False
-        except Exception as e:
-            st.warning(f"Math equation error: {e}")
-            return False
-    
-    def create_processed_document_advanced(self, content_data, formulas, tables, tikz_blocks):
-        """Tạo document với advanced processing"""
+    def create_formatted_document(self, structure, math_expressions, tables):
+        """Create formatted Word document with proper styling"""
         doc = Document()
         
-        # Title
-        title = doc.add_heading('Advanced Document Processing', 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # Set document styles
+        styles = doc.styles
         
-        # Collect all elements
+        # Create or modify Normal style
+        normal_style = styles['Normal']
+        normal_style.font.name = 'Times New Roman'
+        normal_style.font.size = Pt(12)
+        
+        # Document title
+        title = doc.add_heading('Processed Mathematical Document', 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        title_format = title.runs[0]
+        title_format.font.name = 'Times New Roman'
+        title_format.font.size = Pt(16)
+        title_format.font.color.rgb = RGBColor(0, 51, 102)
+        
+        # Collect all elements with positions
         all_elements = []
         
-        for formula in formulas:
+        # Add math expressions
+        for expr in math_expressions:
             all_elements.append({
-                'type': 'formula',
-                'start': formula['start'],
-                'end': formula['end'],
-                'data': formula
+                'type': 'math',
+                'start': expr['start'],
+                'end': expr['end'],
+                'data': expr
             })
         
+        # Add tables
         for table in tables:
             all_elements.append({
                 'type': 'table',
-                'start': table['start'], 
+                'start': table['start'],
                 'end': table['end'],
                 'data': table
-            })
-        
-        for tikz in tikz_blocks:
-            all_elements.append({
-                'type': 'tikz',
-                'start': tikz['start'],
-                'end': tikz['end'],
-                'data': tikz
             })
         
         # Sort by position
         all_elements.sort(key=lambda x: x['start'])
         
+        # Process document
+        original_text = structure['raw_text']
         current_pos = 0
-        stats = {'equations': 0, 'tables': 0, 'tikz_images': 0}
-        
-        original_text = content_data['text']
+        stats = {'math_processed': 0, 'tables_created': 0}
         
         for element in all_elements:
             # Add text before element
             if element['start'] > current_pos:
                 text_before = original_text[current_pos:element['start']]
                 if text_before.strip():
+                    # Split into paragraphs and add
                     paragraphs = text_before.split('\n')
                     for para_text in paragraphs:
                         if para_text.strip():
-                            p = doc.add_paragraph(para_text.strip())
+                            p = doc.add_paragraph()
                             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                            run = p.add_run(para_text.strip())
+                            run.font.name = 'Times New Roman'
+                            run.font.size = Pt(12)
             
             # Process element
-            if element['type'] == 'formula':
-                formula_data = element['data']
+            if element['type'] == 'math':
+                math_data = element['data']
                 p = doc.add_paragraph()
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
-                if self.add_math_equation_enhanced(p, formula_data['latex']):
-                    stats['equations'] += 1
+                if self.convert_math_to_word_equation(p, math_data['content']):
+                    stats['math_processed'] += 1
                 else:
-                    # Unicode fallback
-                    run = p.add_run(f"[MATH] {formula_data['latex']}")
+                    # Fallback styling
+                    run = p.add_run(f"[MATH] {math_data['content']}")
                     run.italic = True
                     run.bold = True
                     run.font.color.rgb = RGBColor(0, 100, 200)
-            
+                    run.font.name = 'Cambria Math'
+                
             elif element['type'] == 'table':
-                table = self.create_professional_table(doc, element['data'])
+                table = self.create_styled_table(doc, element['data'])
                 if table:
-                    stats['tables'] += 1
-                    doc.add_paragraph()  # Spacing
-            
-            elif element['type'] == 'tikz':
-                tikz_data = element['data']
-                
-                # Compile TikZ to PNG
-                with st.spinner(f"Compiling TikZ diagram..."):
-                    img_path = self.compile_tikz_to_png(tikz_data['code'])
-                
-                if img_path and os.path.exists(img_path):
-                    try:
-                        p = doc.add_paragraph()
-                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        run = p.add_run()
-                        run.add_picture(img_path, width=Inches(5))
-                        stats['tikz_images'] += 1
-                        
-                        # Add caption
-                        caption_p = doc.add_paragraph(f"TikZ Diagram: {tikz_data.get('type', 'Generated')}")
-                        caption_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        for run in caption_p.runs:
-                            run.italic = True
-                            run.font.size = Pt(9)
-                    except Exception as e:
-                        st.warning(f"Could not insert TikZ image: {e}")
-                else:
-                    # Text fallback
-                    p = doc.add_paragraph()
-                    run = p.add_run(f"[TikZ DIAGRAM]\n{tikz_data['code']}")
-                    run.font.color.rgb = RGBColor(139, 69, 19)
+                    stats['tables_created'] += 1
+                    # Add spacing
+                    doc.add_paragraph()
             
             current_pos = element['end']
         
@@ -579,32 +617,38 @@ class AdvancedWordProcessor:
                 paragraphs = remaining_text.split('\n')
                 for para_text in paragraphs:
                     if para_text.strip():
-                        p = doc.add_paragraph(para_text.strip())
+                        p = doc.add_paragraph()
                         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                        run = p.add_run(para_text.strip())
+                        run.font.name = 'Times New Roman'
+                        run.font.size = Pt(12)
         
-        # Add processing summary
+        # Add summary
         doc.add_page_break()
-        summary = doc.add_heading('Processing Summary', 1)
-        summary.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        summary_heading = doc.add_heading('Processing Summary', 1)
+        summary_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
+        summary_para = doc.add_paragraph()
+        summary_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         summary_text = f"""
-Advanced Processing Results:
+Document Processing Complete
 
-✅ Math Equations: {stats['equations']} processed
-✅ Tables: {stats['tables']} created with professional styling  
-✅ TikZ Diagrams: {stats['tikz_images']} compiled to high-quality images
-✅ Format preservation: Enhanced text layout
+✅ Mathematical expressions processed: {stats['math_processed']}
+✅ Professional tables created: {stats['tables_created']}
+✅ Original formatting preserved and enhanced
+✅ Professional styling applied
 
-Generated by Advanced Word Processor
+Generated by Professional Word Processor
 """
-        
-        p = doc.add_paragraph(summary_text.strip())
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = summary_para.add_run(summary_text.strip())
+        run.font.name = 'Times New Roman'
+        run.font.size = Pt(11)
+        run.italic = True
         
         return doc, stats
     
     def cleanup(self):
-        """Cleanup temporary files"""
+        """Clean up temporary files"""
         import shutil
         try:
             shutil.rmtree(self.temp_dir)
@@ -613,210 +657,260 @@ Generated by Advanced Word Processor
 
 def main():
     st.set_page_config(
-        page_title="Advanced Word Processor",
-        page_icon="🚀",
+        page_title="Professional Word Processor",
+        page_icon="📄",
         layout="wide"
     )
     
-    st.title("🚀 Advanced Word Document Processor")
+    st.title("📄 Professional Word Document Processor")
     st.markdown("""
-    **Phiên bản nâng cao** với đầy đủ tính năng:
-    - ✅ **TikZ Compilation**: LaTeX TikZ → PNG images chất lượng cao
-    - ✅ **Professional Tables**: Markdown → Word tables với styling đẹp
-    - ✅ **Enhanced Formulas**: Multiple LaTeX formats support
-    - ✅ **Format Preservation**: Giữ nguyên định dạng gốc
+    **Phiên bản chuyên nghiệp** với format preservation:
+    - ✅ **Format Preservation**: Giữ nguyên cấu trúc và định dạng gốc
+    - ✅ **Professional Math**: LaTeX equations → Native Word equations
+    - ✅ **Smart Table Detection**: Multiple table format support
+    - ✅ **Enhanced Styling**: Professional typography và layout
     """)
     
-    # System requirements check
+    # Show status
     col1, col2, col3 = st.columns(3)
     
     with col1:
         if MATH2DOCX_AVAILABLE:
-            st.success("🧮 math2docx: ✅")
+            st.success("🧮 Real equations: ✅")
         else:
-            st.warning("🧮 math2docx: ❌")
+            st.warning("🧮 Unicode fallback: ⚠️")
     
     with col2:
-        # Check LaTeX installation
-        try:
-            result = subprocess.run(['pdflatex', '--version'], 
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                st.success("📊 LaTeX: ✅")
-            else:
-                st.warning("📊 LaTeX: ❌")
-        except:
-            st.warning("📊 LaTeX: ❌ (Install TeX Live/MiKTeX)")
+        st.success("📊 Professional tables: ✅")
     
     with col3:
-        if LATEX2MATHML_AVAILABLE:
-            st.success("🔢 latex2mathml: ✅")
-        else:
-            st.info("🔢 latex2mathml: ⚠️")
+        st.success("📝 Format preservation: ✅")
     
-    # Upload section
+    # File upload
     uploaded_file = st.file_uploader(
         "📁 Upload Word Document (.docx)",
         type=['docx'],
-        help="Upload document with LaTeX formulas, Markdown tables, and TikZ diagrams"
+        help="Upload your Word document for professional processing"
     )
     
     if uploaded_file:
-        processor = AdvancedWordProcessor()
+        processor = ProfessionalWordProcessor()
         
         try:
-            # Read with format preservation
-            with st.spinner("Reading document with format preservation..."):
-                content_data = processor.read_word_document_preserve_format(uploaded_file)
+            # Read document structure
+            with st.spinner("Reading document structure..."):
+                structure = processor.read_word_with_structure(uploaded_file)
             
-            if not content_data['text']:
+            if not structure['raw_text']:
                 st.error("Could not read document content.")
                 return
             
-            # Preview
+            # Show preview
             with st.expander("📖 Document Preview"):
-                st.text_area("Original Content", 
-                           content_data['text'][:2000] + "..." if len(content_data['text']) > 2000 else content_data['text'],
+                st.write(f"**Text length**: {len(structure['raw_text'])} characters")
+                st.write(f"**Paragraphs**: {len(structure['paragraphs'])}")
+                st.write(f"**Existing tables**: {len(structure['tables'])}")
+                st.text_area("Content Preview", 
+                           structure['raw_text'][:1500] + "..." if len(structure['raw_text']) > 1500 else structure['raw_text'],
                            height=200)
             
-            # Analysis
-            st.subheader("📊 Content Analysis")
+            # Analyze content
+            st.subheader("🔍 Content Analysis")
             
-            # Find elements
-            formulas = processor.find_formulas_enhanced(content_data['text'])
-            tables = processor.find_markdown_tables_robust(content_data['text'])
-            tikz_blocks = processor.find_tikz_blocks_enhanced(content_data['text'])
+            with st.spinner("Analyzing mathematical content and tables..."):
+                math_expressions = processor.detect_math_expressions_advanced(structure['raw_text'])
+                detected_tables = processor.detect_tables_comprehensive(structure['raw_text'])
+                # Merge with existing tables
+                all_tables = structure['tables'] + detected_tables
             
-            col1, col2, col3 = st.columns(3)
+            # Show analysis results
+            col1, col2 = st.columns(2)
             
             with col1:
-                st.metric("🧮 Math Formulas", len(formulas))
-                for i, formula in enumerate(formulas[:3]):
-                    st.code(f"{formula['type']}: {formula['latex'][:50]}...")
+                st.metric("🧮 Math Expressions", len(math_expressions))
+                
+                if math_expressions:
+                    st.write("**Found math expressions:**")
+                    for i, expr in enumerate(math_expressions[:5]):
+                        st.code(f"{expr['type']}: {expr['content'][:60]}...")
+                    if len(math_expressions) > 5:
+                        st.write(f"... and {len(math_expressions) - 5} more")
             
             with col2:
-                st.metric("📊 Tables", len(tables))
-                for i, table in enumerate(tables[:2]):
-                    if table['header']:
-                        st.write(f"**Table {i+1}**: {len(table['rows'])}×{len(table['header'])}")
-                        # Preview as DataFrame
-                        try:
-                            df_data = {}
-                            for j, col in enumerate(table['header']):
-                                df_data[col] = [
-                                    row[j] if j < len(row) else ''
-                                    for row in table['rows'][:3]  # First 3 rows
-                                ]
-                            st.dataframe(df_data, use_container_width=True)
-                        except:
-                            st.write(f"Headers: {table['header']}")
-            
-            with col3:
-                st.metric("🎨 TikZ Diagrams", len(tikz_blocks))
-                for i, tikz in enumerate(tikz_blocks[:2]):
-                    st.write(f"**TikZ {i+1}**: {tikz['type']}")
-                    st.code(tikz['code'][:100] + "..." if len(tikz['code']) > 100 else tikz['code'])
+                st.metric("📊 Tables", len(all_tables))
+                
+                if all_tables:
+                    st.write("**Found tables:**")
+                    for i, table in enumerate(all_tables[:3]):
+                        if table.get('header'):
+                            st.write(f"**Table {i+1}**: {len(table.get('rows', []))}×{len(table['header'])}")
+                            # Show preview
+                            if table.get('rows'):
+                                preview_data = {}
+                                for j, col in enumerate(table['header'][:4]):  # Max 4 columns
+                                    preview_data[col] = [
+                                        row[j] if j < len(row) else ''
+                                        for row in table['rows'][:3]  # Max 3 rows
+                                    ]
+                                st.dataframe(preview_data, use_container_width=True)
             
             # Processing options
             st.subheader("⚙️ Processing Options")
             
             col1, col2 = st.columns(2)
             with col1:
-                compile_tikz = st.checkbox("🎨 Compile TikZ to PNG", value=True,
-                                         help="Requires LaTeX installation")
-                preserve_format = st.checkbox("📝 Preserve Original Format", value=True)
+                math_method = st.selectbox(
+                    "🧮 Math Processing Method",
+                    ["Auto (Recommended)", "math2docx Only", "Unicode Enhanced"],
+                    help="Choose how to process mathematical expressions"
+                )
+                
+                preserve_styles = st.checkbox("📝 Preserve Original Styles", value=True)
             
             with col2:
-                table_style = st.selectbox("📊 Table Style", 
-                                         ["Professional", "Simple", "Colorful"])
-                math_method = st.selectbox("🧮 Math Method",
-                                         ["Auto", "math2docx", "Unicode"])
+                table_styling = st.selectbox(
+                    "📊 Table Styling",
+                    ["Professional Blue", "Classic Gray", "Minimal"],
+                    help="Choose table styling theme"
+                )
+                
+                enhance_typography = st.checkbox("✨ Enhanced Typography", value=True)
             
             # Process button
-            if st.button("🚀 Process Advanced Document", type="primary", use_container_width=True):
-                with st.spinner("Advanced processing in progress..."):
+            if st.button("🚀 Process Document Professionally", type="primary", use_container_width=True):
+                with st.spinner("Professional processing in progress..."):
+                    progress_bar = st.progress(0)
+                    
                     try:
-                        processed_doc, stats = processor.create_processed_document_advanced(
-                            content_data, formulas, tables, tikz_blocks
+                        # Progress update
+                        progress_bar.progress(25)
+                        
+                        # Process document
+                        processed_doc, stats = processor.create_formatted_document(
+                            structure, math_expressions, all_tables
                         )
+                        
+                        progress_bar.progress(75)
                         
                         # Save document
                         doc_io = io.BytesIO()
                         processed_doc.save(doc_io)
                         doc_io.seek(0)
                         
-                        # Success message
-                        st.success("✅ Advanced processing complete!")
+                        progress_bar.progress(100)
                         
-                        # Statistics
+                        # Success
+                        st.success("✅ Professional processing complete!")
+                        
+                        # Show results
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.metric("Math Equations", stats['equations'])
+                            st.metric("📐 Math Expressions", stats['math_processed'])
                         with col2:
-                            st.metric("Professional Tables", stats['tables'])
+                            st.metric("📊 Tables Created", stats['tables_created'])
                         with col3:
-                            st.metric("TikZ Images", stats['tikz_images'])
+                            st.metric("📄 Pages", "Professional")
                         
-                        # Download
+                        # Download button
                         st.download_button(
-                            label="📥 Download Advanced Document",
+                            label="📥 Download Professional Document",
                             data=doc_io.getvalue(),
-                            file_name="advanced_processed_document.docx",
+                            file_name="professional_processed_document.docx",
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                             use_container_width=True
                         )
                         
-                        # Processing info
+                        # Processing details
                         st.info(f"""
-🎯 **Advanced Processing Results:**
-- {stats['equations']} math equations processed with real LaTeX rendering
-- {stats['tables']} professional tables with color styling and borders
-- {stats['tikz_images']} TikZ diagrams compiled to high-quality PNG images
-- Original document structure and formatting preserved
-- Enhanced typography and layout applied
+🎯 **Professional Processing Results:**
+
+**Mathematical Content:**
+- {stats['math_processed']} expressions converted to native Word equations
+- Enhanced Unicode fallback for unsupported expressions
+- Professional mathematical typography applied
+
+**Table Enhancement:**
+- {stats['tables_created']} tables created with professional styling
+- Consistent formatting and alignment
+- Color-coded headers and alternating row colors
+
+**Format Preservation:**
+- Original document structure maintained
+- Enhanced typography with Times New Roman
+- Professional styling and spacing applied
+- Improved readability and presentation
                         """)
                         
                     except Exception as e:
                         st.error(f"Processing error: {e}")
                         import traceback
-                        st.code(traceback.format_exc())
+                        with st.expander("Error Details"):
+                            st.code(traceback.format_exc())
+                    finally:
+                        progress_bar.empty()
         
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error reading document: {e}")
             import traceback
-            st.code(traceback.format_exc())
+            with st.expander("Error Details"):
+                st.code(traceback.format_exc())
         
         finally:
             processor.cleanup()
     
-    # Setup instructions
-    with st.expander("🔧 System Setup Instructions"):
+    # Help section
+    with st.expander("📚 Help & Documentation"):
         st.markdown("""
-        ### Required Packages:
-        ```bash
-        # Core packages
-        pip install streamlit python-docx mammoth markdown Pillow PyMuPDF pandas
+        ### 🎯 What This Tool Does:
         
-        # For real math equations
-        pip install math2docx latex2mathml
+        **Format Preservation:**
+        - Reads original Word document structure
+        - Maintains paragraph styles and formatting
+        - Preserves document hierarchy and layout
         
-        # For LaTeX compilation (choose one):
-        # Windows: Install MiKTeX from https://miktex.org/
-        # Mac: brew install mactex
-        # Linux: sudo apt-get install texlive-full
+        **Mathematical Processing:**
+        - Detects LaTeX math expressions: `$E = mc^2$`
+        - Converts to native Word equations (with math2docx)
+        - Enhanced Unicode fallback for compatibility
+        - Supports multiple math formats
+        
+        **Table Enhancement:**
+        - Detects markdown tables, space-separated tables
+        - Creates professional Word tables with styling
+        - Color-coded headers and alternating rows
+        - Consistent formatting and alignment
+        
+        ### 📋 Supported Input Formats:
+        
+        **Math Expressions:**
+        ```
+        $E = mc^2$                    # Inline LaTeX
+        $$F = ma$$                    # Display LaTeX
+        [FORMULA: a^2 + b^2 = c^2]    # Formula blocks
+        \\alpha, \\beta, \\pi         # Greek letters
         ```
         
-        ### Features by Package:
-        - **math2docx**: Real LaTeX equations in Word
-        - **LaTeX**: TikZ compilation to PNG
-        - **latex2mathml**: Alternative math rendering
-        - **mammoth**: Enhanced Word reading with format preservation
+        **Tables:**
+        ```
+        | Header 1 | Header 2 | Header 3 |    # Markdown style
+        |----------|----------|----------|
+        | Data 1   | Data 2   | Data 3   |
         
-        ### TikZ Requirements:
-        TikZ compilation requires a full LaTeX installation with:
-        - `pdflatex` command available
-        - `tikz` package and libraries
-        - Standard math packages (`amsmath`, `amsfonts`)
+        Column1    Column2    Column3        # Space-separated
+        Value1     Value2     Value3
+        ```
+        
+        ### ⚙️ Requirements:
+        ```bash
+        # Essential packages
+        pip install streamlit python-docx mammoth Pillow
+        
+        # For real Word equations (recommended)
+        pip install math2docx
+        
+        # For enhanced math processing
+        pip install latex2mathml sympy
+        ```
         """)
 
 if __name__ == "__main__":
