@@ -7,11 +7,6 @@ sympy
 markdown
 mistune
 pdf2image
-PyMuPDF
 Pillow
 requests
 pathlib
-subprocess32; sys_platform == "linux"
-pytest
-black
-flake8
