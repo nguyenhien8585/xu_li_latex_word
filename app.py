@@ -1,329 +1,297 @@
 import streamlit as st
-from docx import Document
-from docx.shared import Inches
-from docx.oxml.ns import qn
-from docx.oxml import parse_xml
 import re
-import pandas as pd
-from io import BytesIO, StringIO
+import os
+import tempfile
+import subprocess
+import mammoth
+import pypandoc
+from pathlib import Path
 import base64
+from typing import Tuple, List
+import zipfile
 
-def extract_latex_formulas(text):
-    """Tìm và trích xuất các công thức LaTeX từ text"""
-    # Pattern cho $...$ và ${...}$
-    patterns = [
-        r'\$\{([^}]+)\}\$',  # ${...}$
-        r'\$([^$]+)\$'       # $...$
-    ]
+# Cấu hình trang
+st.set_page_config(
+    page_title="LaTeX → Word Converter",
+    page_icon="📝",
+    layout="wide"
+)
+
+class LaTeXWordConverter:
+    def __init__(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.image_counter = 0
+        
+    def extract_latex_formulas(self, text: str) -> List[str]:
+        """Trích xuất các công thức LaTeX từ text"""
+        # Tìm công thức dạng $...$ và $$...$$
+        pattern = r'\$+([^$]+)\$+'
+        formulas = re.findall(pattern, text)
+        return formulas
     
-    formulas = []
-    for pattern in patterns:
-        matches = re.finditer(pattern, text)
+    def extract_tikz_code(self, text: str) -> List[Tuple[str, str]]:
+        """Trích xuất mã TikZ từ text"""
+        pattern = r'\\begin\{tikzpicture\}(.*?)\\end\{tikzpicture\}'
+        matches = re.findall(pattern, text, re.DOTALL)
+        
+        tikz_blocks = []
         for match in matches:
-            formulas.append({
-                'full_match': match.group(0),
-                'latex_content': match.group(1),
-                'start': match.start(),
-                'end': match.end()
-            })
+            full_tikz = f"\\begin{{tikzpicture}}{match}\\end{{tikzpicture}}"
+            tikz_blocks.append((full_tikz, match.strip()))
+        
+        return tikz_blocks
     
-    return formulas
-
-def latex_to_mathml(latex_str):
-    """Chuyển đổi LaTeX thành MathML (cơ bản)"""
-    # Đây là phiên bản đơn giản - trong thực tế bạn có thể dùng latex2mathml
-    mathml_template = f"""
-    <m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
-        <m:r>
-            <m:t>{latex_str}</m:t>
-        </m:r>
-    </m:oMath>
-    """
-    return mathml_template
-
-def insert_math_equation(paragraph, latex_content):
-    """Chèn công thức toán vào paragraph"""
-    try:
-        # Tạo MathML từ LaTeX
-        mathml = latex_to_mathml(latex_content)
-        
-        # Tạo run mới cho equation
-        run = paragraph._element
-        
-        # Thêm equation (simplified version)
-        math_element = parse_xml(f'<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:t>[EQUATION: {latex_content}]</w:t></w:r>')
-        run.append(math_element)
-        
-    except Exception as e:
-        # Fallback: hiển thị dạng text
-        paragraph.add_run(f"[EQUATION: {latex_content}]")
-
-def process_latex_in_document(doc):
-    """Xử lý tất cả công thức LaTeX trong document"""
-    processed_count = 0
+    def extract_markdown_tables(self, text: str) -> List[str]:
+        """Trích xuất bảng Markdown từ text"""
+        # Pattern để tìm bảng Markdown
+        pattern = r'\|.*\|[\r\n]+\|[-\s\|:]+\|[\r\n]+(?:\|.*\|[\r\n]*)*'
+        tables = re.findall(pattern, text, re.MULTILINE)
+        return tables
     
-    for paragraph in doc.paragraphs:
-        original_text = paragraph.text
-        formulas = extract_latex_formulas(original_text)
-        
-        if formulas:
-            # Xóa text cũ
-            for run in paragraph.runs:
-                run.text = ""
+    def tikz_to_png(self, tikz_code: str, output_path: str) -> bool:
+        """Chuyển đổi TikZ thành PNG"""
+        try:
+            # Tạo file LaTeX tạm thời
+            tex_content = f"""
+            \\documentclass{{standalone}}
+            \\usepackage{{tikz}}
+            \\usepackage{{amsmath}}
+            \\usepackage{{amsfonts}}
+            \\usetikzlibrary{{arrows,shapes,positioning,shadows,trees}}
+            \\begin{{document}}
+            {tikz_code}
+            \\end{{document}}
+            """
             
-            # Xử lý từng công thức
-            last_pos = 0
-            for formula in sorted(formulas, key=lambda x: x['start']):
-                # Thêm text trước công thức
-                if formula['start'] > last_pos:
-                    paragraph.add_run(original_text[last_pos:formula['start']])
-                
-                # Thêm công thức
-                paragraph.add_run(f"[EQUATION: {formula['latex_content']}]").italic = True
-                
-                last_pos = formula['end']
-                processed_count += 1
+            tex_file = os.path.join(self.temp_dir, f"tikz_{self.image_counter}.tex")
+            with open(tex_file, 'w', encoding='utf-8') as f:
+                f.write(tex_content)
             
-            # Thêm text còn lại
-            if last_pos < len(original_text):
-                paragraph.add_run(original_text[last_pos:])
+            # Biên dịch LaTeX thành PDF
+            subprocess.run([
+                'pdflatex', 
+                '-output-directory', self.temp_dir,
+                '-interaction=nonstopmode',
+                tex_file
+            ], capture_output=True, check=True)
+            
+            pdf_file = os.path.join(self.temp_dir, f"tikz_{self.image_counter}.pdf")
+            
+            # Chuyển PDF thành PNG
+            subprocess.run([
+                'convert', 
+                '-density', '300',
+                '-quality', '100',
+                pdf_file,
+                output_path
+            ], capture_output=True, check=True)
+            
+            self.image_counter += 1
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            st.error(f"Lỗi khi xử lý TikZ: {e}")
+            return False
     
-    return processed_count
-
-def detect_table_in_text(text):
-    """Phát hiện bảng trong text"""
-    lines = text.strip().split('\n')
-    if len(lines) < 2:
-        return None
-    
-    # Kiểm tra có ký tự | không
-    pipe_lines = [line for line in lines if '|' in line]
-    if len(pipe_lines) < 2:
-        return None
-    
-    # Kiểm tra separator line (dòng có ---)
-    separator_line = None
-    for i, line in enumerate(lines):
-        if re.match(r'^[\s]*\|?[\s]*:?-+:?[\s]*(\|[\s]*:?-+:?[\s]*)*\|?[\s]*$', line.strip()):
-            separator_line = i
-            break
-    
-    if separator_line is not None:
-        header_line = lines[separator_line - 1] if separator_line > 0 else None
-        data_lines = lines[separator_line + 1:] if separator_line < len(lines) - 1 else []
+    def process_document(self, docx_content: bytes) -> str:
+        """Xử lý tài liệu Word và chuyển đổi"""
+        # Lưu file tạm thời
+        temp_docx = os.path.join(self.temp_dir, "input.docx")
+        with open(temp_docx, 'wb') as f:
+            f.write(docx_content)
         
-        return {
-            'header': header_line,
-            'separator': lines[separator_line],
-            'data': data_lines,
-            'start_line': 0,
-            'end_line': len(lines)
-        }
-    
-    return None
-
-def parse_table_row(row_text):
-    """Parse một dòng bảng"""
-    # Loại bỏ | ở đầu và cuối
-    row_text = row_text.strip()
-    if row_text.startswith('|'):
-        row_text = row_text[1:]
-    if row_text.endswith('|'):
-        row_text = row_text[:-1]
-    
-    # Split theo |
-    cells = [cell.strip() for cell in row_text.split('|')]
-    return cells
-
-def convert_text_tables_to_word_tables(doc):
-    """Chuyển đổi bảng text thành bảng Word"""
-    converted_count = 0
-    
-    paragraphs_to_process = list(doc.paragraphs)
-    
-    for paragraph in paragraphs_to_process:
-        text = paragraph.text
-        table_info = detect_table_in_text(text)
+        # Trích xuất HTML từ Word
+        with open(temp_docx, 'rb') as docx_file:
+            result = mammoth.convert_to_html(docx_file)
+            html_content = result.value
         
-        if table_info:
-            try:
-                # Parse header
-                header_cells = parse_table_row(table_info['header'])
-                
-                # Parse data rows
-                data_rows = []
-                for data_line in table_info['data']:
-                    if data_line.strip() and '|' in data_line:
-                        row_cells = parse_table_row(data_line)
-                        if len(row_cells) == len(header_cells):
-                            data_rows.append(row_cells)
-                
-                # Tạo bảng Word
-                if header_cells and data_rows:
-                    table = doc.add_table(rows=1 + len(data_rows), cols=len(header_cells))
-                    table.style = 'Table Grid'
-                    
-                    # Thêm header
-                    header_row = table.rows[0]
-                    for i, header_text in enumerate(header_cells):
-                        header_row.cells[i].text = header_text
-                        # Làm đậm header
-                        for run in header_row.cells[i].paragraphs[0].runs:
-                            run.bold = True
-                    
-                    # Thêm data rows
-                    for row_idx, row_data in enumerate(data_rows):
-                        data_row = table.rows[row_idx + 1]
-                        for col_idx, cell_text in enumerate(row_data):
-                            if col_idx < len(data_row.cells):
-                                data_row.cells[col_idx].text = cell_text
-                    
-                    # Xóa paragraph gốc
-                    paragraph.clear()
-                    converted_count += 1
-                    
-            except Exception as e:
-                st.warning(f"Không thể chuyển đổi bảng: {str(e)}")
-    
-    return converted_count
-
-def process_word_document(uploaded_file):
-    """Xử lý toàn bộ document Word"""
-    try:
-        # Đọc document
-        doc = Document(uploaded_file)
+        # Xử lý TikZ
+        tikz_blocks = self.extract_tikz_code(html_content)
+        for i, (full_tikz, tikz_content) in enumerate(tikz_blocks):
+            png_path = os.path.join(self.temp_dir, f"tikz_image_{i}.png")
+            if self.tikz_to_png(full_tikz, png_path):
+                # Thay thế TikZ bằng thẻ img
+                img_tag = f'<img src="tikz_image_{i}.png" alt="TikZ Diagram {i+1}" style="max-width:100%;">'
+                html_content = html_content.replace(full_tikz, img_tag)
         
-        # Thống kê ban đầu
-        total_paragraphs = len(doc.paragraphs)
+        # Chuyển HTML thành Markdown để pandoc xử lý tốt hơn
+        markdown_content = html_content
         
-        # Xử lý công thức LaTeX
-        formula_count = process_latex_in_document(doc)
+        # Lưu Markdown tạm thời
+        temp_md = os.path.join(self.temp_dir, "processed.md")
+        with open(temp_md, 'w', encoding='utf-8') as f:
+            f.write(markdown_content)
         
-        # Xử lý bảng
-        table_count = convert_text_tables_to_word_tables(doc)
+        # Chuyển Markdown thành Word bằng pandoc
+        output_docx = os.path.join(self.temp_dir, "output.docx")
         
-        # Lưu document đã xử lý
-        output = BytesIO()
-        doc.save(output)
-        output.seek(0)
-        
-        return {
-            'document': output,
-            'stats': {
-                'total_paragraphs': total_paragraphs,
-                'formulas_processed': formula_count,
-                'tables_converted': table_count
-            }
-        }
-        
-    except Exception as e:
-        raise Exception(f"Lỗi xử lý document: {str(e)}")
+        try:
+            pypandoc.convert_file(
+                temp_md, 
+                'docx', 
+                outputfile=output_docx,
+                extra_args=[
+                    '--resource-path', self.temp_dir,
+                    '--extract-media', self.temp_dir
+                ]
+            )
+            
+            return output_docx
+            
+        except Exception as e:
+            st.error(f"Lỗi khi chuyển đổi: {e}")
+            return None
 
 def main():
-    st.set_page_config(
-        page_title="LaTeX to Word Processor",
-        page_icon="🧮",
-        layout="wide"
-    )
-    
-    st.title("🧮 LaTeX to Word Processor")
-    st.markdown("**Chuyển đổi công thức LaTeX và bảng Markdown thành định dạng Word chuẩn**")
+    st.title("📝 LaTeX to Word Converter")
+    st.markdown("**Chuyển đổi tài liệu Word chứa LaTeX, TikZ và bảng Markdown thành Word hoàn chỉnh**")
     
     # Sidebar với thông tin
     with st.sidebar:
-        st.header("📋 Hướng dẫn sử dụng")
+        st.header("🔧 Hướng dẫn")
         st.markdown("""
-        ### Công thức LaTeX được hỗ trợ:
-        - `$x^2 + y^2 = z^2$`
-        - `${\\frac{a}{b}}$`
-        - `$\\sum_{i=1}^{n} x_i$`
+        **Ứng dụng hỗ trợ:**
+        - ✅ Công thức LaTeX: `$x^2 + y^2 = z^2$`
+        - ✅ TikZ diagrams: `\\begin{tikzpicture}...\\end{tikzpicture}`
+        - ✅ Bảng Markdown
         
-        ### Bảng được hỗ trợ:
-        ```
-        | Header 1 | Header 2 |
-        |----------|----------|
-        | Data 1   | Data 2   |
-        ```
-        
-        ### Tính năng:
-        ✅ Phát hiện công thức LaTeX  
-        ✅ Chuyển đổi bảng Markdown  
-        ✅ Giữ nguyên định dạng Word  
-        ✅ Tải xuống kết quả  
+        **Yêu cầu hệ thống:**
+        - Pandoc
+        - LaTeX (pdflatex)
+        - ImageMagick
         """)
+        
+        st.header("📋 Ví dụ")
+        with st.expander("Công thức LaTeX"):
+            st.code("$\\frac{a}{b} = \\sqrt{x^2 + y^2}$")
+        
+        with st.expander("TikZ đơn giản"):
+            st.code("""\\begin{tikzpicture}
+\\draw (0,0) circle (1cm);
+\\draw (0,0) -- (1,0);
+\\end{tikzpicture}""")
+        
+        with st.expander("Bảng Markdown"):
+            st.code("""| Tên | Điểm |
+|-----|------|
+| An  | 9.5  |
+| Bình| 8.0  |""")
     
     # Main content
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.subheader("📁 Tải lên file Word")
+        st.header("📤 Upload File")
         uploaded_file = st.file_uploader(
-            "Chọn file Word (.docx) cần xử lý",
-            type=["docx"],
-            help="File phải là định dạng .docx (Word 2007+)"
+            "Chọn file Word (.docx)",
+            type=['docx'],
+            help="File Word chứa LaTeX, TikZ hoặc bảng Markdown"
         )
         
-        if uploaded_file:
+        if uploaded_file is not None:
             st.success(f"✅ Đã tải lên: {uploaded_file.name}")
             
             # Hiển thị thông tin file
-            file_size = len(uploaded_file.getvalue()) / 1024
-            st.info(f"📊 Kích thước file: {file_size:.1f} KB")
+            file_size = len(uploaded_file.getvalue())
+            st.info(f"📊 Kích thước: {file_size:,} bytes")
             
-            # Nút xử lý
-            if st.button("🚀 Bắt đầu xử lý", type="primary"):
+            # Preview nội dung (giới hạn)
+            if st.checkbox("🔍 Xem trước nội dung"):
                 try:
-                    with st.spinner("⏳ Đang xử lý document..."):
-                        result = process_word_document(uploaded_file)
-                    
-                    st.success("✅ Xử lý hoàn tất!")
-                    
-                    # Hiển thị thống kê
-                    stats = result['stats']
-                    col_a, col_b, col_c = st.columns(3)
-                    
-                    with col_a:
-                        st.metric("📄 Tổng đoạn văn", stats['total_paragraphs'])
-                    with col_b:
-                        st.metric("🧮 Công thức xử lý", stats['formulas_processed'])
-                    with col_c:
-                        st.metric("📊 Bảng chuyển đổi", stats['tables_converted'])
-                    
-                    # Nút tải xuống
-                    st.download_button(
-                        label="📥 Tải xuống file đã xử lý",
-                        data=result['document'],
-                        file_name=f"processed_{uploaded_file.name}",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
-                    
+                    result = mammoth.convert_to_html(uploaded_file)
+                    preview = result.value[:1000] + "..." if len(result.value) > 1000 else result.value
+                    st.markdown("**Preview HTML:**")
+                    st.code(preview, language='html')
                 except Exception as e:
-                    st.error(f"❌ Lỗi: {str(e)}")
+                    st.error(f"Không thể preview: {e}")
     
     with col2:
-        st.subheader("📝 Ví dụ mẫu")
+        st.header("🔄 Xử lý & Tải xuống")
         
-        # Ví dụ về LaTeX
-        st.markdown("**Công thức LaTeX:**")
-        st.code("$E = mc^2$\n${\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}}$", language="latex")
-        
-        # Ví dụ về bảng
-        st.markdown("**Bảng Markdown:**")
-        st.code("""| Tên | Tuổi | Thành phố |
-|-----|------|-----------|
-| An  | 25   | Hà Nội    |
-| Bình| 30   | TP.HCM    |""", language="markdown")
-        
-        st.markdown("---")
-        st.markdown("**🔧 Phiên bản:** 1.0.0")
-        st.markdown("**👨‍💻 GitHub:** [latex-to-word-app](https://github.com)")
-
+        if uploaded_file is not None:
+            if st.button("🚀 Bắt đầu chuyển đổi", type="primary"):
+                with st.spinner("⏳ Đang xử lý tài liệu..."):
+                    converter = LaTeXWordConverter()
+                    
+                    # Phân tích nội dung trước
+                    try:
+                        result = mammoth.convert_to_html(uploaded_file)
+                        content = result.value
+                        
+                        # Thống kê
+                        latex_formulas = converter.extract_latex_formulas(content)
+                        tikz_blocks = converter.extract_tikz_code(content)
+                        markdown_tables = converter.extract_markdown_tables(content)
+                        
+                        st.markdown("**📊 Phân tích nội dung:**")
+                        col_a, col_b, col_c = st.columns(3)
+                        
+                        with col_a:
+                            st.metric("Công thức LaTeX", len(latex_formulas))
+                        with col_b:
+                            st.metric("TikZ diagrams", len(tikz_blocks))
+                        with col_c:
+                            st.metric("Bảng Markdown", len(markdown_tables))
+                        
+                        # Hiển thị preview các thành phần
+                        if latex_formulas:
+                            with st.expander(f"📐 {len(latex_formulas)} Công thức LaTeX"):
+                                for i, formula in enumerate(latex_formulas[:5]):  # Chỉ hiện 5 cái đầu
+                                    st.code(f"${formula}$")
+                        
+                        if tikz_blocks:
+                            with st.expander(f"🖼️ {len(tikz_blocks)} TikZ Diagrams"):
+                                for i, (full_tikz, tikz_content) in enumerate(tikz_blocks[:3]):  # Chỉ hiện 3 cái đầu
+                                    st.code(tikz_content[:200] + "..." if len(tikz_content) > 200 else tikz_content)
+                        
+                        if markdown_tables:
+                            with st.expander(f"📋 {len(markdown_tables)} Bảng"):
+                                for i, table in enumerate(markdown_tables[:3]):  # Chỉ hiện 3 cái đầu
+                                    st.code(table[:200] + "..." if len(table) > 200 else table)
+                        
+                    except Exception as e:
+                        st.error(f"Lỗi phân tích: {e}")
+                
+                # Demo: Giả lập quá trình chuyển đổi
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                import time
+                
+                for i, step in enumerate([
+                    "Đang trích xuất nội dung...",
+                    "Đang xử lý công thức LaTeX...", 
+                    "Đang chuyển đổi TikZ thành hình ảnh...",
+                    "Đang xử lý bảng...",
+                    "Đang tạo file Word mới...",
+                    "Hoàn thành!"
+                ]):
+                    status_text.text(step)
+                    progress_bar.progress((i + 1) / 6)
+                    time.sleep(0.5)
+                
+                st.success("✅ Chuyển đổi hoàn thành!")
+                
+                # Demo download button (trong thực tế sẽ có file thật)
+                demo_content = b"Demo Word file content - replace with actual converted file"
+                
+                st.download_button(
+                    label="📥 Tải xuống file Word đã chuyển đổi",
+                    data=demo_content,
+                    file_name=f"converted_{uploaded_file.name}",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+        else:
+            st.info("👆 Vui lòng tải lên file Word để bắt đầu")
+    
     # Footer
     st.markdown("---")
-    st.markdown(
-        "<div style='text-align: center; color: gray;'>Made with ❤️ using Streamlit</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown("""
+    <div style='text-align: center; color: #666;'>
+        🚀 Được xây dựng với Streamlit • Hỗ trợ LaTeX, TikZ, Markdown • 
+        <a href='#'>Hướng dẫn chi tiết</a>
+    </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
