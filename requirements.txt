@@ -1,5 +1,35 @@
+# Core Streamlit app
 streamlit>=1.28.0
-mammoth>=1.9.0
+
+# Word document processing
 python-docx>=0.8.11
-pandas>=2.0.0
-numpy>=1.24.0
+mammoth>=1.5.1
+docxcompose>=1.4.0
+
+# LaTeX and Math processing
+latex2mathml>=3.76.0
+sympy>=1.12
+
+# Markdown processing
+markdown>=3.5.1
+mistune>=3.0.2
+
+# Image and PDF processing
+Pillow>=10.0.0
+PyMuPDF>=1.23.0
+pdf2image>=3.1.0
+
+# Additional utilities
+requests>=2.31.0
+pathlib>=1.0.1
+tempfile
+subprocess32; sys_platform == "linux"
+
+# Optional: for better LaTeX support
+# latex2mathml
+# pandoc (install separately)
+
+# Development dependencies (optional)
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0
