@@ -1,0 +1,86 @@
+# Multi-stage Dockerfile for Word Document Processor
+FROM python:3.11-slim as base
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    # LaTeX distribution
+    texlive-latex-base \
+    texlive-latex-extra \
+    texlive-pictures \
+    texlive-fonts-recommended \
+    texlive-fonts-extra \
+    # Additional tools
+    pandoc \
+    ghostscript \
+    imagemagick \
+    # Build tools
+    gcc \
+    g++ \
+    make \
+    # Utilities
+    curl \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create directories for temporary files
+RUN mkdir -p /tmp/word_processor && \
+    chmod 755 /tmp/word_processor
+
+# Expose Streamlit port
+EXPOSE 8501
+
+# Health check
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
+
+# Run the application
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+
+# ===================================
+# Alternative: Lightweight version
+# ===================================
+FROM python:3.11-slim as lightweight
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Minimal LaTeX installation
+RUN apt-get update && apt-get install -y \
+    texlive-latex-base \
+    texlive-pictures \
+    pandoc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install minimal Python requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+    streamlit \
+    python-docx \
+    mammoth \
+    markdown \
+    PyMuPDF \
+    Pillow
+
+COPY app.py latex_processor.py ./
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
