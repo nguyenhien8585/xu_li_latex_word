@@ -1,13 +1,5 @@
-# Hệ thống LaTeX để biên dịch TikZ
 texlive
 texlive-latex-extra
-texlive-pictures
-texlive-science
-texlive-fonts-recommended
-
-# Chuyển PDF → PNG
 poppler-utils
 ghostscript
-
-# Chuyển markdown hoặc HTML → docx (nếu cần)
 pandoc
