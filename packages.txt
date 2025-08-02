@@ -1,1 +1,3 @@
 pandoc
+texlive-latex-base 
+imagemagick
